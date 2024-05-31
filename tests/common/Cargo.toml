@@ -1,0 +1,10 @@
+[package]
+name = "time-lock-tests-common"
+edition = "2021"
+version.workspace = true
+
+[lib]
+crate-type = ["rlib"]
+
+[dependencies]
+soroban-sdk = { workspace = true }

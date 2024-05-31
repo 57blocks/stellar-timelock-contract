@@ -1,0 +1,25 @@
+[package]
+name = "time-lock-tests"
+edition = "2021"
+version.workspace = true
+
+[lib]
+path = "lib.rs"
+
+[[test]]
+name = "time_lock_tests"
+path = "unit/time_lock_controller_tests_1.rs"
+
+[[test]]
+name = "time_lock_tests_with_example_contract"
+path = "unit/time_lock_controller_tests_2.rs"
+
+[[test]]
+name = "example_contract_tests"
+path = "unit/example_contract_tests.rs"
+
+[dev-dependencies]
+soroban-sdk = {workspace = true}
+time-lock = {workspace = true, features = ["testutils"]}
+time-lock-example-contract = {workspace = true, features = ["testutils"]}
+time-lock-tests-common = {workspace = true}
