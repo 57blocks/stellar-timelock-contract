@@ -1,15 +1,17 @@
 #![no_std]
 
-mod access_control_base;
-mod admin;
-mod config;
+mod access_base;
 mod contract;
+mod time_lock;
 
 #[cfg(any(test, feature = "testutils"))]
-pub use crate::contract::{TimeLockController, TimeLockControllerClient};
+pub mod test {
 
-#[cfg(any(test, feature = "testutils"))]
-pub use crate::config::{
-    CallExecutedEvent, CallScheduledEvent, DataKey, OperationState, RoleKey, RoleLabel,
-    TimeLockError,
-};
+    pub use crate::contract::{TimeLockController, TimeLockControllerClient};
+
+    pub use crate::time_lock::{
+        CallExecutedEvent, CallScheduledEvent, DataKey, RoleLabel, TimeLockError,
+    };
+
+    pub use crate::access_base::RoleKey;
+}

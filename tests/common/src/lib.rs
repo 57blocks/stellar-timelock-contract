@@ -1,6 +1,16 @@
 use soroban_sdk::testutils::{Ledger, LedgerInfo};
 use soroban_sdk::{xdr::ToXdr, Address, Bytes, BytesN, Env, Symbol, Val, Vec};
 use std::time::{SystemTime, UNIX_EPOCH};
+use time_lock::test::TimeLockControllerClient;
+
+pub struct Context {
+    pub env: Env,
+    pub contract: Address,
+    pub time_lock: TimeLockControllerClient<'static>,
+    pub proposer: Address,
+    pub executor: Address,
+    pub admin: Address,
+}
 
 pub fn hash_call_data(
     env: &Env,

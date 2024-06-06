@@ -8,15 +8,7 @@ path = "lib.rs"
 
 [[test]]
 name = "time_lock_tests"
-path = "unit/time_lock_controller_tests_1.rs"
-
-[[test]]
-name = "time_lock_tests_with_example_contract"
-path = "unit/time_lock_controller_tests_2.rs"
-
-[[test]]
-name = "example_contract_tests"
-path = "unit/example_contract_tests.rs"
+path = "unit/time_lock_controller_tests.rs"
 
 [dev-dependencies]
 soroban-sdk = {workspace = true}

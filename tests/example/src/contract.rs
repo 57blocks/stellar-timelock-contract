@@ -1,9 +1,28 @@
-use soroban_sdk::{contract, contracttype, contractimpl, log, Address, Env};
+use core::panic;
+
+use soroban_sdk::{contract, contracterror, contractimpl, contracttype, log, panic_with_error, Address, BytesN, Env, String};
+
+#[contracterror]
+#[derive(Copy, Clone, Debug, Eq, PartialEq, PartialOrd, Ord)]
+#[repr(u32)]
+pub enum Error {
+    LimitReached = 1,
+    LimitReached2 = 2,
+}
+
+#[contracttype]
+#[derive(Clone)]
+pub struct ContractConfig {
+    pub owner: Address,
+    pub name: String,
+}
 
 #[contracttype]
 pub enum DataKey {
     Owner,
     Counter,
+    AccountTotal(Address),
+    ContractInfo(BytesN<32>),
 }
 
 #[contract]
@@ -68,7 +87,58 @@ impl IncrementContract {
         IncrementContract::increment(env, num)
     }
 
+    pub fn increment_account_total(env: Env, account: Address, num: u32) -> u32 {
+        let owner: Address = env.storage().instance().get(&DataKey::Owner).unwrap();
+        owner.require_auth();
+
+        let mut count: u32 = env.storage().instance().get(&DataKey::AccountTotal(account.clone())).unwrap_or(0);
+        count += num;
+
+        env.storage().instance().set(&DataKey::AccountTotal(account), &count);
+        count
+    }
+
+    pub fn increment_return_error(env: Env, num: u32) -> Result<u32, Error> {
+        if num > 100 {
+           return Err(Error::LimitReached)
+        }
+
+        let count = IncrementContract::increment(env, num);
+        Ok(count)
+    }
+
+    pub fn increment_with_panic_error(env: Env, num: u32) -> u32 {
+        if num > 100 {
+            panic_with_error!(env, Error::LimitReached2)
+        }
+
+        IncrementContract::increment(env, num)
+    }
+
+    pub fn increment_with_panic(env: Env, num: u32) -> u32 {
+        if num > 100 {
+            panic!("Limit reached")
+        }
+
+        IncrementContract::increment(env, num)
+    }
+
+    pub fn set_contract_info(env: Env, info: BytesN<32>, config: ContractConfig) {
+        let owner: Address = env.storage().instance().get(&DataKey::Owner).unwrap();
+        owner.require_auth();
+
+        env.storage().instance().set(&DataKey::ContractInfo(info), &config);
+    }
+
     pub fn get_count(env: Env) -> u32 {
         env.storage().instance().get(&DataKey::Counter).unwrap_or(0)
+    }
+
+    pub fn get_account_total(env: Env, account: Address) -> u32 {
+        env.storage().instance().get(&DataKey::AccountTotal(account)).unwrap_or(0)
+    }
+
+    pub fn get_contract_info(env: Env, info: BytesN<32>) -> ContractConfig {
+        env.storage().instance().get(&DataKey::ContractInfo(info)).unwrap()
     }
 }

@@ -1259,6 +1259,7 @@ name = "time-lock-tests-common"
 version = "0.1.0"
 dependencies = [
  "soroban-sdk",
+ "time-lock",
 ]
 
 [[package]]

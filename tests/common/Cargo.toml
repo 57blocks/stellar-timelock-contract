@@ -8,3 +8,4 @@ crate-type = ["rlib"]
 
 [dependencies]
 soroban-sdk = { workspace = true }
+time-lock = {workspace = true, features = ["testutils"]}

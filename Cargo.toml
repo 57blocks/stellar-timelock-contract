@@ -2,7 +2,7 @@
 resolver = "2"
 members = [
   "time_lock",
-  "example",
+  "tests/example",
   "tests",
   "tests/common",
 ] 
@@ -12,7 +12,7 @@ version = "0.1.0"
 
 [workspace.dependencies]
 soroban-sdk = "20.3.2"
-time-lock-example-contract = { path = "example" }
+time-lock-example-contract = { path = "tests/example" }
 time-lock = { path = "time_lock" }
 time-lock-tests-common = { path = "tests/common" }
 
