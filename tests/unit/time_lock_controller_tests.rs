@@ -62,7 +62,7 @@ mod initialize {
         assert_eq!(client.has_role(&executor, &RoleLabel::Executor), true);
 
         let all_actual_events = env.events().all();
-        assert_eq!(all_actual_events.len(), 4);
+        assert_eq!(all_actual_events.len(), 5);
 
         assert_eq!(
             all_actual_events,
@@ -70,34 +70,27 @@ mod initialize {
                 &env,
                 (
                     contract_id.clone(),
+                    (Symbol::new(&env, "MinDelayUpdated"),).into_val(&env),
+                    MIN_DELAY.into_val(&env)
+                ),
+                (
+                    contract_id.clone(),
                     (Symbol::new(&env, "AdminSet"),).into_val(&env),
                     admin.clone().into_val(&env)
                 ),
                 (
                     contract_id.clone(),
-                    (
-                        Symbol::new(&env, "RoleGranted"),
-                        RoleKey::Proposers(proposer.clone())
-                    )
-                        .into_val(&env),
+                    (Symbol::new(&env, "RoleGranted"), 1_u32).into_val(&env),
                     proposer.clone().into_val(&env)
                 ),
                 (
                     contract_id.clone(),
-                    (
-                        Symbol::new(&env, "RoleGranted"),
-                        RoleKey::Cancellers(proposer.clone())
-                    )
-                        .into_val(&env),
+                    (Symbol::new(&env, "RoleGranted"), 3_u32).into_val(&env),
                     proposer.clone().into_val(&env)
                 ),
                 (
                     contract_id.clone(),
-                    (
-                        Symbol::new(&env, "RoleGranted"),
-                        RoleKey::Executors(executor.clone())
-                    )
-                        .into_val(&env),
+                    (Symbol::new(&env, "RoleGranted"), 2_u32).into_val(&env),
                     executor.clone().into_val(&env)
                 ),
             ]
@@ -319,7 +312,7 @@ mod schedule {
 
         let actual_events = env.events().all();
         let event_len = actual_events.len();
-        assert_eq!(event_len, 5);
+        assert_eq!(event_len, 6);
 
         assert_eq! {
             actual_events.slice(event_len - 1..),
@@ -514,7 +507,7 @@ mod execute {
 
         let actual_events = env.events().all();
         let event_len = actual_events.len();
-        assert_eq!(event_len, 6);
+        assert_eq!(event_len, 7);
 
         assert_eq! {
             actual_events.slice(event_len - 1..),
@@ -952,15 +945,12 @@ mod cancel {
             )]
         );
 
-        // assert_eq!(
-        //     client.get_schedule_state(&operation_id),
-        //     OperationState::Unset
-        // );
+        assert_eq!(client.get_schedule_lock_time(&operation_id), 0);
         assert_eq!(client.get_schedule_lock_time(&operation_id), 0);
 
         let actual_events = env.events().all();
         let event_len = actual_events.len();
-        assert_eq!(event_len, 6);
+        assert_eq!(event_len, 7);
 
         assert_eq! {
             actual_events.slice(event_len - 1..),
@@ -1028,15 +1018,12 @@ mod cancel {
             )]
         );
 
-        // assert_eq!(
-        //     client.get_schedule_state(&operation_id),
-        //     OperationState::Unset
-        // );
+        assert_eq!(client.get_schedule_lock_time(&operation_id), 0);
         assert_eq!(client.get_schedule_lock_time(&operation_id), 0);
 
         let actual_events = env.events().all();
         let event_len = actual_events.len();
-        assert_eq!(event_len, 6);
+        assert_eq!(event_len, 7);
 
         assert_eq! {
             actual_events.slice(event_len - 1..),
@@ -1129,43 +1116,21 @@ mod cancel {
 
 mod update_min_delay {
     use super::*;
-    use soroban_sdk::{vec, BytesN, IntoVal, Symbol};
+    use soroban_sdk::{vec, IntoVal, Symbol};
     #[test]
     fn is_ok() {
         let Context {
             env,
             contract: contract_id,
             time_lock: client,
-            proposer,
+            proposer: _,
             executor: _,
             admin: _,
         } = setup();
 
-        let target = contract_id.clone();
-        let fn_name = Symbol::new(&env, "update_min_delay");
-        let delay: u64 = 300000;
-        let salt = BytesN::random(&env);
-        let data = vec![&env, delay.into_val(&env), salt.to_val()];
-        let predecessor: Option<BytesN<32>> = None;
-
-        let operation_id = client.schedule(
-            &proposer,
-            &target,
-            &fn_name,
-            &data,
-            &salt,
-            &predecessor,
-            &delay,
-        );
-
-        set_env_timestamp(&env, current_timestamp());
-
-        client.update_min_delay(&delay, &salt);
+        let delay = MIN_DELAY + 10;
+        client.update_min_delay(&delay);
         assert_eq!(delay, client.get_min_delay());
-
-        let actual_delay = client.get_min_delay();
-        assert_eq!(actual_delay, delay);
-        assert_eq!(client.get_schedule_lock_time(&operation_id), DONE_TIMESTAMP);
 
         let actual_events = env.events().all();
         let event_len = actual_events.len();
@@ -1185,44 +1150,20 @@ mod update_min_delay {
     }
 
     #[test]
-    #[should_panic = "Error(Contract, #5)"]
-    fn when_waiting_should_panic() {
-        let Context {
-            env,
-            contract: contract_id,
-            time_lock: client,
-            proposer,
-            executor: _,
-            admin: _,
-        } = setup();
+    fn not_admin_should_panic() {
+        let env = Env::default();
+        env.mock_all_auths();
 
-        let target = contract_id.clone();
-        let fn_name = Symbol::new(&env, "update_min_delay");
-        let delay: u64 = 300000;
-        let salt = BytesN::random(&env);
-        let data = vec![&env, delay.into_val(&env), salt.to_val()];
+        let contract_id = env.register_contract(None, TimeLockController);
+        let client = TimeLockControllerClient::new(&env, &contract_id);
+        let delay = MIN_DELAY + 10;
 
-        client.schedule(&proposer, &target, &fn_name, &data, &salt, &None, &delay);
-
-        client.update_min_delay(&delay, &salt);
-    }
-
-    #[test]
-    #[should_panic = "Error(Contract, #5)"]
-    fn without_schedule_should_panic() {
-        let Context {
-            env,
-            contract: _,
-            time_lock: client,
-            proposer: _,
-            executor: _,
-            admin: _,
-        } = setup();
-
-        let delay: u64 = 300000;
-        let salt = BytesN::random(&env);
-
-        client.update_min_delay(&delay, &salt);
+        assert_eq!(
+            client.try_update_min_delay(&delay),
+            Err(Ok(Error::from_contract_error(
+                TimeLockError::NotPermitted as u32
+            )))
+        );
     }
 }
 
@@ -1287,7 +1228,7 @@ mod grant_role {
         }
 
         #[test]
-        #[should_panic = "Error(Contract, #10)"]
+        #[should_panic = "Error(Contract, #9)"]
         fn not_initialized_should_panic() {
             let env = Env::default();
             env.mock_all_auths();
@@ -1357,7 +1298,7 @@ mod grant_role {
         }
 
         #[test]
-        #[should_panic = "Error(Contract, #10)"]
+        #[should_panic = "Error(Contract, #9)"]
         fn not_initialized_should_panic() {
             let env = Env::default();
             env.mock_all_auths();
@@ -1431,7 +1372,7 @@ mod grant_role {
         }
 
         #[test]
-        #[should_panic = "Error(Contract, #10)"]
+        #[should_panic = "Error(Contract, #9)"]
         fn not_initialized_should_panic() {
             let env = Env::default();
             env.mock_all_auths();
@@ -1516,7 +1457,7 @@ mod revoke_role {
         }
 
         #[test]
-        #[should_panic = "Error(Contract, #10)"]
+        #[should_panic = "Error(Contract, #9)"]
         fn not_initialized_should_panic() {
             let env = Env::default();
             env.mock_all_auths();
@@ -1598,7 +1539,7 @@ mod revoke_role {
         }
 
         #[test]
-        #[should_panic = "Error(Contract, #10)"]
+        #[should_panic = "Error(Contract, #9)"]
         fn not_initialized_should_panic() {
             let env = Env::default();
             env.mock_all_auths();
@@ -1686,7 +1627,7 @@ mod revoke_role {
         }
 
         #[test]
-        #[should_panic = "Error(Contract, #10)"]
+        #[should_panic = "Error(Contract, #9)"]
         fn not_initialized_should_panic() {
             let env = Env::default();
             env.mock_all_auths();
@@ -1701,219 +1642,286 @@ mod revoke_role {
     }
 }
 
-mod integrate_test_with_increment{
+mod update_admin {
     use super::*;
-    use time_lock_example_contract::test::ContractConfig;
-    use soroban_sdk::{Address, Env, IntoVal, Symbol, String, BytesN, vec};
+    use soroban_sdk::{Address, Env, IntoVal, Symbol};
 
     #[test]
-fn test_increment_when_time_lock(){
-    let env = Env::default();
-    env.mock_all_auths();
+    fn is_ok() {
+        let Context {
+            env,
+            contract: contract_id,
+            time_lock: client,
+            proposer: _,
+            executor: _,
+            admin,
+        } = setup();
 
-    let contract_id = env.register_contract(None, TimeLockController);
-    let client = TimeLockControllerClient::new(&env, &contract_id);
+        let new_admin = Address::generate(&env);
+        client.update_admin(&new_admin);
 
-    let proposer = Address::generate(&env);
-    let executor = Address::generate(&env);
-    client.initialize(
-        &MIN_DELAY,
-        &vec![&env, proposer.clone()],
-        &vec![&env, executor.clone()],
-        &Address::generate(&env),
-    );
+        assert_eq!(
+            env.auths(),
+            std::vec![(
+                admin.clone(),
+                AuthorizedInvocation {
+                    function: AuthorizedFunction::Contract((
+                        contract_id.clone(),
+                        Symbol::new(&env, "update_admin"),
+                        (&new_admin,).into_val(&env)
+                    )),
+                    sub_invocations: std::vec![]
+                }
+            )]
+        );
+    }
 
-    let example_contract_id = env.register_contract(None, IncrementContract);
-    let example_client = IncrementContractClient::new(&env, &example_contract_id);
+    #[test]
+    fn not_admin_should_panic() {
+        let env = Env::default();
+        env.mock_all_auths();
 
-    let owner = contract_id.clone();
-    example_client.initialize(&owner);
+        let contract_id = env.register_contract(None, TimeLockController);
+        let client = TimeLockControllerClient::new(&env, &contract_id);
 
-    let target = example_contract_id.clone();
-    let fn_name = Symbol::new(&env, "increment_owner");
-    let sum: u32 = 1000;
-    let data = (sum,).into_val(&env);
-    let delay: u64 = MIN_DELAY + 10;
-    let salt = BytesN::random(&env);
-
-    client.schedule(&proposer, &target, &fn_name, &data, &salt, &None,&delay);
-
-    set_env_timestamp(&env, current_timestamp());
-
-    client.execute(&executor, &target, &fn_name, &data, &salt, &None);
-
-    let count = example_client.get_count();
-    assert_eq!(count, 1000);
+        let new_admin = Address::generate(&env);
+        assert_eq!(
+            client.try_update_admin(&new_admin),
+            Err(Ok(Error::from_contract_error(
+                TimeLockError::NotPermitted as u32
+            )))
+        );
+    }
 }
+mod integrate_test_with_increment {
+    use super::*;
+    use soroban_sdk::{vec, Address, BytesN, Env, IntoVal, String, Symbol};
+    use time_lock_example_contract::test::ContractConfig;
 
-#[test]
-#[should_panic]
-fn test_increment_when_time_lock_but_caller_not_time_lock() {
-    let env = Env::default();
-    env.mock_all_auths();
+    #[test]
+    fn test_increment_when_time_lock() {
+        let env = Env::default();
+        env.mock_all_auths();
 
-    let contract_id = env.register_contract(None, TimeLockController);
-    let client = TimeLockControllerClient::new(&env, &contract_id);
+        let contract_id = env.register_contract(None, TimeLockController);
+        let client = TimeLockControllerClient::new(&env, &contract_id);
 
-    let proposer = Address::generate(&env);
-    let executor = Address::generate(&env);
-    client.initialize(
-        &MIN_DELAY,
-        &vec![&env, proposer.clone()],
-        &vec![&env, executor.clone()],
-        &Address::generate(&env),
-    );
+        let proposer = Address::generate(&env);
+        let executor = Address::generate(&env);
+        client.initialize(
+            &MIN_DELAY,
+            &vec![&env, proposer.clone()],
+            &vec![&env, executor.clone()],
+            &Address::generate(&env),
+        );
 
-    let example_contract_id = env.register_contract(None, IncrementContract);
-    let example_client = IncrementContractClient::new(&env, &example_contract_id);
+        let example_contract_id = env.register_contract(None, IncrementContract);
+        let example_client = IncrementContractClient::new(&env, &example_contract_id);
 
-    let owner = Address::generate(&env);
-    example_client.initialize(&owner);
+        let owner = contract_id.clone();
+        example_client.initialize(&owner);
 
-    let target = example_contract_id.clone();
-    let fn_name = Symbol::new(&env, "increment_owner");
-    let sum: u32 = 1000;
-    let data = (sum,).into_val(&env);
-    let delay: u64 = MIN_DELAY + 10;
-    let salt = BytesN::random(&env);
+        let target = example_contract_id.clone();
+        let fn_name = Symbol::new(&env, "increment_owner");
+        let sum: u32 = 1000;
+        let data = (sum,).into_val(&env);
+        let delay: u64 = MIN_DELAY + 10;
+        let salt = BytesN::random(&env);
 
-    client.schedule(&proposer, &target, &fn_name, &data, &salt, &None, &delay);
+        client.schedule(&proposer, &target, &fn_name, &data, &salt, &None, &delay);
 
-    set_env_timestamp(&env, current_timestamp());
+        set_env_timestamp(&env, current_timestamp());
 
-    client.execute(&executor, &target, &fn_name, &data, &salt, &None);
-}
+        client.execute(&executor, &target, &fn_name, &data, &salt, &None);
 
-#[test]
-fn test_increment_when_time_lock_with_no_args() {
-    let env = Env::default();
-    env.mock_all_auths();
+        let count = example_client.get_count();
+        assert_eq!(count, 1000);
+    }
 
-    let contract_id = env.register_contract(None, TimeLockController);
-    let client = TimeLockControllerClient::new(&env, &contract_id);
+    #[test]
+    #[should_panic]
+    fn test_increment_when_time_lock_but_caller_not_time_lock() {
+        let env = Env::default();
+        env.mock_all_auths();
 
-    let proposer = Address::generate(&env);
-    let executor = Address::generate(&env);
-    client.initialize(
-        &MIN_DELAY,
-        &vec![&env, proposer.clone()],
-        &vec![&env, executor.clone()],
-        &Address::generate(&env),
-    );
+        let contract_id = env.register_contract(None, TimeLockController);
+        let client = TimeLockControllerClient::new(&env, &contract_id);
 
-    let example_contract_id = env.register_contract(None, IncrementContract);
-    let example_client = IncrementContractClient::new(&env, &example_contract_id);
+        let proposer = Address::generate(&env);
+        let executor = Address::generate(&env);
+        client.initialize(
+            &MIN_DELAY,
+            &vec![&env, proposer.clone()],
+            &vec![&env, executor.clone()],
+            &Address::generate(&env),
+        );
 
-    let target = example_contract_id.clone();
-    let fn_name = Symbol::new(&env, "increment_five");
-    let data = vec![&env];
-    let delay: u64 = MIN_DELAY + 10;
-    let salt = BytesN::random(&env);
+        let example_contract_id = env.register_contract(None, IncrementContract);
+        let example_client = IncrementContractClient::new(&env, &example_contract_id);
 
-    client.schedule(&proposer, &target, &fn_name, &data, &salt,&None, &delay);
+        let owner = Address::generate(&env);
+        example_client.initialize(&owner);
 
-    set_env_timestamp(&env, current_timestamp());
+        let target = example_contract_id.clone();
+        let fn_name = Symbol::new(&env, "increment_owner");
+        let sum: u32 = 1000;
+        let data = (sum,).into_val(&env);
+        let delay: u64 = MIN_DELAY + 10;
+        let salt = BytesN::random(&env);
 
-    client.execute(&executor, &target, &fn_name, &data, &salt, &None);
+        client.schedule(&proposer, &target, &fn_name, &data, &salt, &None, &delay);
 
-    let count = example_client.get_count();
-    assert_eq!(count, 5);
-}
+        set_env_timestamp(&env, current_timestamp());
 
-#[test]
-fn test_account_increment_when_time_lock_with_predecessor() {
-    let env = Env::default();
-    env.mock_all_auths();
+        client.execute(&executor, &target, &fn_name, &data, &salt, &None);
+    }
 
-    let contract_id = env.register_contract(None, TimeLockController);
-    let client = TimeLockControllerClient::new(&env, &contract_id);
+    #[test]
+    fn test_increment_when_time_lock_with_no_args() {
+        let env = Env::default();
+        env.mock_all_auths();
 
-    let proposer = Address::generate(&env);
-    let executor = Address::generate(&env);
-    client.initialize(
-        &MIN_DELAY,
-        &vec![&env, proposer.clone()],
-        &vec![&env, executor.clone()],
-        &Address::generate(&env),
-    );
+        let contract_id = env.register_contract(None, TimeLockController);
+        let client = TimeLockControllerClient::new(&env, &contract_id);
 
-    let example_contract_id = env.register_contract(None, IncrementContract);
-    let example_client = IncrementContractClient::new(&env, &example_contract_id);
+        let proposer = Address::generate(&env);
+        let executor = Address::generate(&env);
+        client.initialize(
+            &MIN_DELAY,
+            &vec![&env, proposer.clone()],
+            &vec![&env, executor.clone()],
+            &Address::generate(&env),
+        );
 
-    let owner = contract_id.clone();
-    example_client.initialize(&owner);
+        let example_contract_id = env.register_contract(None, IncrementContract);
+        let example_client = IncrementContractClient::new(&env, &example_contract_id);
 
-    let target = example_contract_id.clone();
-    let fn_name = Symbol::new(&env, "increment_owner");
-    let sum: u32 = 1000;
-    let data = (sum,).into_val(&env);
-    let delay: u64 = MIN_DELAY + 10;
-    let salt = BytesN::random(&env);
+        let target = example_contract_id.clone();
+        let fn_name = Symbol::new(&env, "increment_five");
+        let data = vec![&env];
+        let delay: u64 = MIN_DELAY + 10;
+        let salt = BytesN::random(&env);
 
-    let operation_id = client.schedule(&proposer, &target, &fn_name, &data, &salt, &None, &delay);
+        client.schedule(&proposer, &target, &fn_name, &data, &salt, &None, &delay);
 
-    let fn_name_2= Symbol::new(&env, "increment_account_total");
-    let account = Address::generate(&env);
-    let data_2 = (account.clone(), sum).into_val(&env);
-    let salt_2 = BytesN::random(&env);
-    let predecessor = Some(operation_id);
+        set_env_timestamp(&env, current_timestamp());
 
-    client.schedule(&proposer, &target, &fn_name_2, &data_2, &salt_2, &predecessor, &delay);
+        client.execute(&executor, &target, &fn_name, &data, &salt, &None);
 
-    set_env_timestamp(&env, current_timestamp());
+        let count = example_client.get_count();
+        assert_eq!(count, 5);
+    }
 
-    client.execute(&executor, &target, &fn_name, &data, &salt, &None);
-    client.execute(&executor, &target, &fn_name_2, &data_2, &salt_2, &predecessor);
+    #[test]
+    fn test_account_increment_when_time_lock_with_predecessor() {
+        let env = Env::default();
+        env.mock_all_auths();
 
-    let count = example_client.get_count();
-    assert_eq!(count, 1000);
+        let contract_id = env.register_contract(None, TimeLockController);
+        let client = TimeLockControllerClient::new(&env, &contract_id);
 
-    let account_total = example_client.get_account_total(&account);
-    assert_eq!(account_total, 1000);
-}
+        let proposer = Address::generate(&env);
+        let executor = Address::generate(&env);
+        client.initialize(
+            &MIN_DELAY,
+            &vec![&env, proposer.clone()],
+            &vec![&env, executor.clone()],
+            &Address::generate(&env),
+        );
 
-#[test]
-fn test_increment_contract_config_when_time_lock() {
-    let env = Env::default();
-    env.mock_all_auths();
+        let example_contract_id = env.register_contract(None, IncrementContract);
+        let example_client = IncrementContractClient::new(&env, &example_contract_id);
 
-    let contract_id = env.register_contract(None, TimeLockController);
-    let client = TimeLockControllerClient::new(&env, &contract_id);
+        let owner = contract_id.clone();
+        example_client.initialize(&owner);
 
-    let proposer = Address::generate(&env);
-    let executor = Address::generate(&env);
-    client.initialize(
-        &MIN_DELAY,
-        &vec![&env, proposer.clone()],
-        &vec![&env, executor.clone()],
-        &Address::generate(&env),
-    );
+        let target = example_contract_id.clone();
+        let fn_name = Symbol::new(&env, "increment_owner");
+        let sum: u32 = 1000;
+        let data = (sum,).into_val(&env);
+        let delay: u64 = MIN_DELAY + 10;
+        let salt = BytesN::random(&env);
 
-    let example_contract_id = env.register_contract(None, IncrementContract);
-    let example_client = IncrementContractClient::new(&env, &example_contract_id);
+        let operation_id =
+            client.schedule(&proposer, &target, &fn_name, &data, &salt, &None, &delay);
 
-    let owner = contract_id.clone();
-    example_client.initialize(&owner);
+        let fn_name_2 = Symbol::new(&env, "increment_account_total");
+        let account = Address::generate(&env);
+        let data_2 = (account.clone(), sum).into_val(&env);
+        let salt_2 = BytesN::random(&env);
+        let predecessor = Some(operation_id);
 
-    let target = example_contract_id.clone();
-    let fn_name = Symbol::new(&env, "set_contract_info");
-    let key = BytesN::random(&env);
-    let config = ContractConfig {
-        owner: Address::generate(&env),
-        name: String::from_str(&env, "IncrementContract"),
-    };
-    let data = (key.clone(), config.clone()).into_val(&env);
-    let delay: u64 = MIN_DELAY + 10;
-    let salt = BytesN::random(&env);
+        client.schedule(
+            &proposer,
+            &target,
+            &fn_name_2,
+            &data_2,
+            &salt_2,
+            &predecessor,
+            &delay,
+        );
 
-    client.schedule(&proposer, &target, &fn_name, &data, &salt, &None, &delay);
+        set_env_timestamp(&env, current_timestamp());
 
-    set_env_timestamp(&env, current_timestamp());
+        client.execute(&executor, &target, &fn_name, &data, &salt, &None);
+        client.execute(
+            &executor,
+            &target,
+            &fn_name_2,
+            &data_2,
+            &salt_2,
+            &predecessor,
+        );
 
-    client.execute(&executor, &target, &fn_name, &data, &salt, &None);
+        let count = example_client.get_count();
+        assert_eq!(count, 1000);
 
-    let contract_config = example_client.get_contract_info(&key);
-    assert_eq!(contract_config.name, config.name);
-    assert_eq!(contract_config.owner, config.owner);
-}
+        let account_total = example_client.get_account_total(&account);
+        assert_eq!(account_total, 1000);
+    }
+
+    #[test]
+    fn test_increment_contract_config_when_time_lock() {
+        let env = Env::default();
+        env.mock_all_auths();
+
+        let contract_id = env.register_contract(None, TimeLockController);
+        let client = TimeLockControllerClient::new(&env, &contract_id);
+
+        let proposer = Address::generate(&env);
+        let executor = Address::generate(&env);
+        client.initialize(
+            &MIN_DELAY,
+            &vec![&env, proposer.clone()],
+            &vec![&env, executor.clone()],
+            &Address::generate(&env),
+        );
+
+        let example_contract_id = env.register_contract(None, IncrementContract);
+        let example_client = IncrementContractClient::new(&env, &example_contract_id);
+
+        let owner = contract_id.clone();
+        example_client.initialize(&owner);
+
+        let target = example_contract_id.clone();
+        let fn_name = Symbol::new(&env, "set_contract_info");
+        let key = BytesN::random(&env);
+        let config = ContractConfig {
+            owner: Address::generate(&env),
+            name: String::from_str(&env, "IncrementContract"),
+        };
+        let data = (key.clone(), config.clone()).into_val(&env);
+        let delay: u64 = MIN_DELAY + 10;
+        let salt = BytesN::random(&env);
+
+        client.schedule(&proposer, &target, &fn_name, &data, &salt, &None, &delay);
+
+        set_env_timestamp(&env, current_timestamp());
+
+        client.execute(&executor, &target, &fn_name, &data, &salt, &None);
+
+        let contract_config = example_client.get_contract_info(&key);
+        assert_eq!(contract_config.name, config.name);
+        assert_eq!(contract_config.owner, config.owner);
+    }
 }

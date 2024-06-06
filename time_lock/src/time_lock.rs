@@ -1,11 +1,11 @@
 use soroban_sdk::InvokeError;
 use soroban_sdk::{
-    contracterror, contracttype, panic_with_error, vec, xdr::ToXdr, Address, Bytes, BytesN, Env,
-    IntoVal, Symbol, Val, Vec,
+    contracterror, contracttype, panic_with_error, xdr::ToXdr, Address, Bytes, BytesN, Env, Symbol,
+    Val, Vec,
 };
 
-use crate::access_base;
-use crate::access_base::RoleKey;
+use crate::role_base;
+use crate::role_base::RoleLabel;
 
 const DONE_TIMESTAMP: u64 = 1;
 const MAX_ACCOUNTS_NUM: u32 = 10;
@@ -15,15 +15,6 @@ const MAX_ACCOUNTS_NUM: u32 = 10;
 pub enum DataKey {
     Scheduler(BytesN<32>),
     MinDelay,
-}
-
-#[derive(Copy, Clone, Debug, Eq, PartialEq)]
-#[contracttype]
-#[repr(u8)]
-pub enum RoleLabel {
-    Proposer = 1,
-    Executor = 2,
-    Canceller = 3,
 }
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
@@ -50,8 +41,7 @@ pub enum TimeLockError {
     ExceedMaxCount = 7,
     InvalidStatus = 8,
     NotPermitted = 9,
-    AdminNotSet = 10,
-    ExecuteFailed = 11,
+    ExecuteFailed = 10,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -77,53 +67,44 @@ pub struct CallScheduledEvent {
 }
 
 pub(crate) fn initialize(
-    env: &Env,
+    e: &Env,
     min_delay: u64,
     proposers: &Vec<Address>,
     executors: &Vec<Address>,
     admin: &Address,
 ) {
-    if access_base::has_admin(env) {
-        panic_with_error!(env, TimeLockError::AlreadyInitialized);
+    if role_base::has_admin(e) {
+        panic_with_error!(e, TimeLockError::AlreadyInitialized);
     }
 
     if min_delay == 0 {
-        panic_with_error!(env, TimeLockError::InvalidParams);
+        panic_with_error!(e, TimeLockError::InvalidParams);
     }
 
     if proposers.len() == 0 || executors.len() == 0 {
-        panic_with_error!(env, TimeLockError::InvalidParams);
+        panic_with_error!(e, TimeLockError::InvalidParams);
     }
 
     if proposers.len() > MAX_ACCOUNTS_NUM || executors.len() > MAX_ACCOUNTS_NUM {
-        panic_with_error!(env, TimeLockError::ExceedMaxCount);
+        panic_with_error!(e, TimeLockError::ExceedMaxCount);
     }
 
-    env.storage().instance().set(&DataKey::MinDelay, &min_delay);
-    access_base::set_admin(env, admin);
+    update_min_delay(e, min_delay);
+
+    role_base::set_admin(e, admin);
 
     for proposer in proposers.iter() {
-        let p_role = RoleKey::Proposers(proposer.clone());
-        let c_role = RoleKey::Cancellers(proposer.clone());
-        access_base::grant_role(env, &p_role);
-        access_base::grant_role(env, &c_role);
-        env.events()
-            .publish((Symbol::new(env, "RoleGranted"), p_role), proposer.clone());
-        env.events()
-            .publish((Symbol::new(env, "RoleGranted"), c_role), proposer.clone());
+        role_base::grant_role(e, &proposer, &RoleLabel::Proposer);
+        role_base::grant_role(e, &proposer, &RoleLabel::Canceller);
     }
 
     for executor in executors.iter() {
-        let e_role = RoleKey::Executors(executor.clone());
-        access_base::grant_role(env, &e_role);
-        env.events()
-            .publish((Symbol::new(env, "RoleGranted"), e_role), executor.clone());
+        role_base::grant_role(e, &executor, &RoleLabel::Executor);
     }
 }
 
 pub(crate) fn schedule(
-    env: &Env,
-    proposer: &Address,
+    e: &Env,
     target: &Address,
     fn_name: &Symbol,
     data: &Vec<Val>,
@@ -131,25 +112,20 @@ pub(crate) fn schedule(
     predecessor: &Option<BytesN<32>>,
     delay: u64,
 ) -> BytesN<32> {
-    if !_is_contract(env, target) {
-        panic_with_error!(&env, TimeLockError::InvalidParams);
+    if !_is_contract(e, target) {
+        panic_with_error!(e, TimeLockError::InvalidParams);
     }
 
-    proposer.require_auth();
-    if !has_role(&env, proposer, &RoleLabel::Proposer) {
-        panic_with_error!(&env, TimeLockError::NotPermitted);
-    }
-
-    let operation_id = _hash_call(env, &target, &fn_name, &data, &salt, &predecessor);
-    _add_operation(env, &operation_id, delay);
+    let operation_id = _hash_call(e, &target, &fn_name, &data, &salt, &predecessor);
+    _add_operation(e, &operation_id, delay);
 
     let actual_predecessor = match predecessor {
         Some(predecessor) => predecessor.clone(),
-        None => BytesN::from_array(env, &[0_u8; 32]),
+        None => BytesN::from_array(e, &[0_u8; 32]),
     };
 
-    env.events().publish(
-        (Symbol::new(&env, "CallScheduled"),),
+    e.events().publish(
+        (Symbol::new(e, "CallScheduled"),),
         CallScheduledEvent {
             opt_id: operation_id.clone(),
             index: 0,
@@ -165,38 +141,32 @@ pub(crate) fn schedule(
 }
 
 pub(crate) fn execute(
-    env: &Env,
-    executor: &Address,
+    e: &Env,
     target: &Address,
     fn_name: &Symbol,
     data: &Vec<Val>,
     salt: &BytesN<32>,
     predecessor: &Option<BytesN<32>>,
 ) {
-    executor.require_auth();
-    if !has_role(&env, executor, &RoleLabel::Executor) {
-        panic_with_error!(&env, TimeLockError::NotPermitted);
-    }
+    let operation_id = _hash_call(e, &target, &fn_name, &data, &salt, &predecessor);
+    _execute_check(e, &operation_id, predecessor);
 
-    let operation_id = _hash_call(env, &target, &fn_name, &data, &salt, &predecessor);
-    _execute_check(&env, &operation_id, predecessor);
-
-    let result = env.try_invoke_contract::<(), InvokeError>(&target, &fn_name, data.clone());
+    let result = e.try_invoke_contract::<(), InvokeError>(&target, &fn_name, data.clone());
 
     match result {
         Ok(_) => {}
         Err(_) => {
-            panic_with_error!(&env, TimeLockError::ExecuteFailed);
+            panic_with_error!(e, TimeLockError::ExecuteFailed);
         }
     }
 
     // Update the state of the operation to executed
-    env.storage()
+    e.storage()
         .persistent()
         .set(&DataKey::Scheduler(operation_id.clone()), &DONE_TIMESTAMP);
 
-    env.events().publish(
-        (Symbol::new(&env, "CallExecuted"),),
+    e.events().publish(
+        (Symbol::new(e, "CallExecuted"),),
         CallExecutedEvent {
             opt_id: operation_id,
             index: 0,
@@ -207,117 +177,38 @@ pub(crate) fn execute(
     );
 }
 
-pub(crate) fn cancel(env: &Env, canceller: &Address, operation_id: &BytesN<32>) {
-    canceller.require_auth();
-
-    if !has_role(&env, canceller, &RoleLabel::Canceller) {
-        panic_with_error!(&env, TimeLockError::NotPermitted);
-    }
-
-    let ledger_time = env.ledger().timestamp();
-    let lock_time = get_schedule_lock_time(env, &operation_id);
+pub(crate) fn cancel(e: &Env, operation_id: &BytesN<32>) {
+    let ledger_time = e.ledger().timestamp();
+    let lock_time = get_schedule_lock_time(e, &operation_id);
     let state = _get_operation_state(ledger_time, lock_time);
     if state == OperationState::Ready || state == OperationState::Waiting {
-        env.storage()
+        e.storage()
             .persistent()
             .remove(&DataKey::Scheduler(operation_id.clone()));
     } else {
-        panic_with_error!(&env, TimeLockError::InvalidStatus);
+        panic_with_error!(e, TimeLockError::InvalidStatus);
     }
 
-    env.events().publish(
-        (Symbol::new(&env, "OperationCancelled"),),
+    e.events().publish(
+        (Symbol::new(e, "OperationCancelled"),),
         operation_id.clone(),
     );
 }
 
-pub(crate) fn update_min_delay(env: &Env, delay: u64, salt: &BytesN<32>) {
-    let operation_id = _hash_call(
-        env,
-        &env.current_contract_address(),
-        &Symbol::new(&env, "update_min_delay"),
-        &vec![env, delay.into_val(env), salt.into_val(env)],
-        &salt,
-        &None,
-    );
-    let ledger_time = env.ledger().timestamp();
-    let lock_time = get_schedule_lock_time(env, &operation_id);
-    if _get_operation_state(ledger_time, lock_time) != OperationState::Ready {
-        panic_with_error!(env, TimeLockError::TimeNotReady);
-    }
+pub(crate) fn update_min_delay(e: &Env, delay: u64) {
+    e.storage().instance().set(&DataKey::MinDelay, &delay);
 
-    env.storage().instance().set(&DataKey::MinDelay, &delay);
-
-    env.storage()
-        .persistent()
-        .set(&DataKey::Scheduler(operation_id), &DONE_TIMESTAMP);
-
-    env.events()
-        .publish((Symbol::new(env, "MinDelayUpdated"),), delay);
+    e.events()
+        .publish((Symbol::new(e, "MinDelayUpdated"),), delay);
 }
 
-pub(crate) fn grant_role(env: &Env, account: &Address, role: &RoleLabel) -> bool {
-    let admin = access_base::read_admin(env);
-    match admin {
-        Some(admin) => {
-            admin.require_auth();
-        }
-        None => panic_with_error!(env, TimeLockError::AdminNotSet),
-    }
-
-    let key: RoleKey;
-    match role {
-        RoleLabel::Proposer => key = RoleKey::Proposers(account.clone()),
-        RoleLabel::Executor => key = RoleKey::Executors(account.clone()),
-        RoleLabel::Canceller => key = RoleKey::Cancellers(account.clone()),
-    }
-
-    let res = access_base::grant_role(env, &key);
-    env.events()
-        .publish((Symbol::new(&env, "RoleGranted"), role.clone()), account);
-
-    res
-}
-
-pub(crate) fn revoke_role(env: &Env, account: &Address, role: &RoleLabel) -> bool {
-    let admin = access_base::read_admin(env);
-    match admin {
-        Some(admin) => {
-            admin.require_auth();
-        }
-        None => panic_with_error!(env, TimeLockError::AdminNotSet),
-    }
-
-    let key: RoleKey;
-    match role {
-        RoleLabel::Proposer => key = RoleKey::Proposers(account.clone()),
-        RoleLabel::Executor => key = RoleKey::Executors(account.clone()),
-        RoleLabel::Canceller => key = RoleKey::Cancellers(account.clone()),
-    }
-    let res = access_base::revoke_role(env, &key);
-    env.events()
-        .publish((Symbol::new(&env, "RoleRevoked"), role.clone()), account);
-
-    res
-}
-
-pub(crate) fn get_schedule_lock_time(env: &Env, operation_id: &BytesN<32>) -> u64 {
+pub(crate) fn get_schedule_lock_time(e: &Env, operation_id: &BytesN<32>) -> u64 {
     let key = DataKey::Scheduler(operation_id.clone());
-    if let Some(schedule) = env.storage().persistent().get::<DataKey, u64>(&key) {
+    if let Some(schedule) = e.storage().persistent().get::<DataKey, u64>(&key) {
         schedule
     } else {
         0_u64
     }
-}
-
-pub(crate) fn has_role(env: &Env, account: &Address, role: &RoleLabel) -> bool {
-    let key: RoleKey;
-    match role {
-        RoleLabel::Proposer => key = RoleKey::Proposers(account.clone()),
-        RoleLabel::Executor => key = RoleKey::Executors(account.clone()),
-        RoleLabel::Canceller => key = RoleKey::Cancellers(account.clone()),
-    }
-    access_base::has_role(env, &key)
 }
 
 fn _get_operation_state(ledger_time: u64, lock_time: u64) -> OperationState {
@@ -332,55 +223,55 @@ fn _get_operation_state(ledger_time: u64, lock_time: u64) -> OperationState {
     }
 }
 
-fn _add_operation(env: &Env, operation_id: &BytesN<32>, delay: u64) {
-    let lock_time = get_schedule_lock_time(&env, operation_id);
-    let ledger_time = env.ledger().timestamp();
+fn _add_operation(e: &Env, operation_id: &BytesN<32>, delay: u64) {
+    let lock_time = get_schedule_lock_time(e, operation_id);
+    let ledger_time = e.ledger().timestamp();
     if _get_operation_state(ledger_time, lock_time) != OperationState::Unset {
-        panic_with_error!(&env, TimeLockError::AlreadyExists);
+        panic_with_error!(e, TimeLockError::AlreadyExists);
     }
-    let min_delay = env.storage().instance().get(&DataKey::MinDelay).unwrap();
+    let min_delay = e.storage().instance().get(&DataKey::MinDelay).unwrap();
     if delay < min_delay {
-        panic_with_error!(&env, TimeLockError::InsufficientDelay);
+        panic_with_error!(e, TimeLockError::InsufficientDelay);
     }
 
-    let schedule = ledger_time + delay;
-    env.storage()
+    let time = ledger_time + delay;
+    e.storage()
         .persistent()
-        .set(&DataKey::Scheduler(operation_id.clone()), &schedule);
+        .set(&DataKey::Scheduler(operation_id.clone()), &time);
 }
 
-fn _execute_check(env: &Env, operation_id: &BytesN<32>, predecessor: &Option<BytesN<32>>) {
-    let ledger_time = env.ledger().timestamp();
-    let lock_time = get_schedule_lock_time(env, operation_id);
+fn _execute_check(e: &Env, operation_id: &BytesN<32>, predecessor: &Option<BytesN<32>>) {
+    let ledger_time = e.ledger().timestamp();
+    let lock_time = get_schedule_lock_time(e, operation_id);
     if _get_operation_state(ledger_time, lock_time) != OperationState::Ready {
-        panic_with_error!(env, TimeLockError::TimeNotReady);
+        panic_with_error!(e, TimeLockError::TimeNotReady);
     }
 
     if let Some(predecessor) = predecessor {
-        let pre_lock_time = get_schedule_lock_time(&env, predecessor);
+        let pre_lock_time = get_schedule_lock_time(e, predecessor);
         if _get_operation_state(ledger_time, pre_lock_time) != OperationState::Executed {
-            panic_with_error!(&env, TimeLockError::PredecessorNotDone);
+            panic_with_error!(e, TimeLockError::PredecessorNotDone);
         }
     }
 }
 
 fn _hash_call(
-    env: &Env,
+    e: &Env,
     target: &Address,
     fn_name: &Symbol,
     data: &Vec<Val>,
     salt: &BytesN<32>,
     predecessor: &Option<BytesN<32>>,
 ) -> BytesN<32> {
-    let mut calldata = Bytes::new(&env);
-    calldata.append(&target.clone().to_xdr(&env));
-    calldata.append(&fn_name.clone().to_xdr(&env));
-    calldata.append(&data.clone().to_xdr(&env));
+    let mut calldata = Bytes::new(e);
+    calldata.append(&target.clone().to_xdr(e));
+    calldata.append(&fn_name.clone().to_xdr(e));
+    calldata.append(&data.clone().to_xdr(e));
     if let Some(predecessor) = predecessor {
-        calldata.append(&predecessor.clone().to_xdr(&env));
+        calldata.append(&predecessor.clone().to_xdr(e));
     }
-    calldata.append(&salt.clone().to_xdr(&env));
-    env.crypto().sha256(&calldata)
+    calldata.append(&salt.clone().to_xdr(e));
+    e.crypto().sha256(&calldata)
 }
 
 fn _is_contract(env: &Env, address: &Address) -> bool {

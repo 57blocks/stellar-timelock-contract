@@ -5,10 +5,14 @@
  * controlled contract to exit before a potentially dangerous maintenance
  * operation is applied.
  */
+use crate::role_base;
+use crate::role_base::RoleLabel;
 use crate::time_lock;
-use crate::time_lock::{DataKey, RoleLabel};
+use crate::time_lock::{DataKey, TimeLockError};
 
-use soroban_sdk::{contract, contractimpl, Address, BytesN, Env, Symbol, Val, Vec};
+use soroban_sdk::{
+    contract, contractimpl, panic_with_error, Address, BytesN, Env, Symbol, Val, Vec,
+};
 
 #[contract]
 pub struct TimeLockController;
@@ -52,16 +56,12 @@ impl TimeLockController {
         predecessor: Option<BytesN<32>>,
         delay: u64,
     ) -> BytesN<32> {
-        time_lock::schedule(
-            &env,
-            &proposer,
-            &target,
-            &fn_name,
-            &data,
-            &salt,
-            &predecessor,
-            delay,
-        )
+        proposer.require_auth();
+        if !role_base::has_role(&env, &proposer, &RoleLabel::Proposer) {
+            panic_with_error!(&env, TimeLockError::NotPermitted);
+        }
+
+        time_lock::schedule(&env, &target, &fn_name, &data, &salt, &predecessor, delay)
     }
 
     /*
@@ -82,15 +82,12 @@ impl TimeLockController {
         salt: BytesN<32>,
         predecessor: Option<BytesN<32>>,
     ) {
-        time_lock::execute(
-            &env,
-            &executor,
-            &target,
-            &fn_name,
-            &data,
-            &salt,
-            &predecessor,
-        )
+        executor.require_auth();
+        if !role_base::has_role(&env, &executor, &RoleLabel::Executor) {
+            panic_with_error!(&env, TimeLockError::NotPermitted);
+        }
+
+        time_lock::execute(&env, &target, &fn_name, &data, &salt, &predecessor)
     }
 
     /*
@@ -101,7 +98,12 @@ impl TimeLockController {
      * - the caller must have the 'canceller' role.
      */
     pub fn cancel(env: Env, canceller: Address, operation_id: BytesN<32>) {
-        time_lock::cancel(&env, &canceller, &operation_id)
+        canceller.require_auth();
+
+        if !role_base::has_role(&env, &canceller, &RoleLabel::Canceller) {
+            panic_with_error!(&env, TimeLockError::NotPermitted);
+        }
+        time_lock::cancel(&env, &operation_id)
     }
 
     /*
@@ -114,8 +116,9 @@ impl TimeLockController {
      * - the caller must be the timelock itself. This can only be achieved by scheduling and later executing
      * an operation where the timelock is the target.
      */
-    pub fn update_min_delay(env: Env, delay: u64, salt: BytesN<32>) {
-        time_lock::update_min_delay(&env, delay, &salt)
+    pub fn update_min_delay(env: Env, delay: u64) {
+        Self::_admin_check(&env);
+        time_lock::update_min_delay(&env, delay)
     }
 
     /*
@@ -126,7 +129,8 @@ impl TimeLockController {
      * - the caller must have the 'admin' role.
      */
     pub fn grant_role(env: Env, account: Address, role: RoleLabel) -> bool {
-        time_lock::grant_role(&env, &account, &role)
+        Self::_admin_check(&env);
+        role_base::grant_role(&env, &account, &role)
     }
 
     /*
@@ -137,7 +141,16 @@ impl TimeLockController {
      * - the caller must have the 'admin' role.
      */
     pub fn revoke_role(env: Env, account: Address, role: RoleLabel) -> bool {
-        time_lock::revoke_role(&env, &account, &role)
+        Self::_admin_check(&env);
+        role_base::revoke_role(&env, &account, &role)
+    }
+
+    /*
+     * Reset the admin account.
+     */
+    pub fn update_admin(env: Env, admin: Address) {
+        Self::_admin_check(&env);
+        role_base::set_admin(&env, &admin)
     }
 
     /*
@@ -152,7 +165,17 @@ impl TimeLockController {
      * Returns `true` if `account` has been granted `role`.
      */
     pub fn has_role(env: &Env, account: Address, role: RoleLabel) -> bool {
-        time_lock::has_role(&env, &account, &role)
+        role_base::has_role(&env, &account, &role)
+    }
+
+    fn _admin_check(e: &Env) {
+        let admin = role_base::read_admin(e);
+        match admin {
+            Some(admin) => {
+                admin.require_auth();
+            }
+            None => panic_with_error!(e, TimeLockError::NotPermitted),
+        }
     }
 }
 
