@@ -6,8 +6,8 @@ use soroban_sdk::testutils::{
 };
 use soroban_sdk::{vec, Address, Env, Error};
 use time_lock::test::{
-    CallExecutedEvent, CallScheduledEvent, RoleKey, RoleLabel, TimeLockController,
-    TimeLockControllerClient, TimeLockError,
+    CallExecutedEvent, CallScheduledEvent, RoleLabel, TimeLockController, TimeLockControllerClient,
+    TimeLockError,
 };
 use time_lock_example_contract::test::{IncrementContract, IncrementContractClient};
 use time_lock_tests_common::{current_timestamp, hash_call_data, set_env_timestamp, Context};
@@ -16,7 +16,7 @@ const MIN_DELAY: u64 = 259200; // 60 * 60 * 24 * 3 => 3 days
 
 const DONE_TIMESTAMP: u64 = 1;
 
-fn setup() -> Context {
+fn setup(is_self_managed: bool) -> Context {
     let env = Env::default();
     env.mock_all_auths();
 
@@ -31,6 +31,7 @@ fn setup() -> Context {
         &vec![&env, proposer.clone()],
         &vec![&env, executor.clone()],
         &admin,
+        &is_self_managed,
     );
     Context {
         env,
@@ -54,7 +55,7 @@ mod initialize {
             proposer,
             executor,
             admin,
-        } = setup();
+        } = setup(true);
 
         assert_eq!(client.get_min_delay(), MIN_DELAY);
         assert_eq!(client.has_role(&proposer, &RoleLabel::Proposer), true);
@@ -62,7 +63,7 @@ mod initialize {
         assert_eq!(client.has_role(&executor, &RoleLabel::Executor), true);
 
         let all_actual_events = env.events().all();
-        assert_eq!(all_actual_events.len(), 5);
+        assert_eq!(all_actual_events.len(), 6);
 
         assert_eq!(
             all_actual_events,
@@ -72,6 +73,11 @@ mod initialize {
                     contract_id.clone(),
                     (Symbol::new(&env, "MinDelayUpdated"),).into_val(&env),
                     MIN_DELAY.into_val(&env)
+                ),
+                (
+                    contract_id.clone(),
+                    (Symbol::new(&env, "SelfManaged"),).into_val(&env),
+                    true.into_val(&env)
                 ),
                 (
                     contract_id.clone(),
@@ -111,12 +117,14 @@ mod initialize {
             &vec![&env, proposer.clone()],
             &vec![&env, executor.clone()],
             &Address::generate(&env),
+            &true,
         );
         client.initialize(
             &MIN_DELAY,
             &vec![&env, proposer.clone()],
             &vec![&env, executor.clone()],
             &Address::generate(&env),
+            &true,
         );
     }
 
@@ -135,6 +143,7 @@ mod initialize {
                 &vec![&env, proposer.clone()],
                 &vec![&env, executor.clone()],
                 &Address::generate(&env),
+                &true
             ),
             Err(Ok(Error::from_contract_error(
                 TimeLockError::InvalidParams as u32
@@ -147,6 +156,7 @@ mod initialize {
                 &vec![&env],
                 &vec![&env, executor.clone()],
                 &Address::generate(&env),
+                &true
             ),
             Err(Ok(Error::from_contract_error(
                 TimeLockError::InvalidParams as u32
@@ -159,6 +169,7 @@ mod initialize {
                 &vec![&env, proposer.clone()],
                 &vec![&env],
                 &Address::generate(&env),
+                &true
             ),
             Err(Ok(Error::from_contract_error(
                 TimeLockError::InvalidParams as u32
@@ -171,6 +182,7 @@ mod initialize {
                 &vec![&env],
                 &vec![&env],
                 &Address::generate(&env),
+                &true
             ),
             Err(Ok(Error::from_contract_error(
                 TimeLockError::InvalidParams as u32
@@ -198,6 +210,7 @@ mod initialize {
                 &proposers,
                 &vec![&env, executor.clone()],
                 &Address::generate(&env),
+                &true
             ),
             Err(Ok(Error::from_contract_error(
                 TimeLockError::ExceedMaxCount as u32
@@ -225,6 +238,7 @@ mod initialize {
                 &vec![&env, proposer.clone()],
                 &executors,
                 &Address::generate(&env),
+                &true
             ),
             Err(Ok(Error::from_contract_error(
                 TimeLockError::ExceedMaxCount as u32
@@ -232,7 +246,13 @@ mod initialize {
         );
 
         assert_eq!(
-            client.try_initialize(&MIN_DELAY, &proposers, &executors, &Address::generate(&env),),
+            client.try_initialize(
+                &MIN_DELAY,
+                &proposers,
+                &executors,
+                &Address::generate(&env),
+                &true
+            ),
             Err(Ok(Error::from_contract_error(
                 TimeLockError::ExceedMaxCount as u32
             )))
@@ -252,7 +272,7 @@ mod schedule {
             proposer,
             executor: _,
             admin: _,
-        } = setup();
+        } = setup(true);
 
         let target = Address::generate(&env);
         let fn_name = symbol_short!("hello");
@@ -312,7 +332,7 @@ mod schedule {
 
         let actual_events = env.events().all();
         let event_len = actual_events.len();
-        assert_eq!(event_len, 6);
+        assert_eq!(event_len, 7);
 
         assert_eq! {
             actual_events.slice(event_len - 1..),
@@ -345,7 +365,7 @@ mod schedule {
             proposer: _,
             executor: _,
             admin: _,
-        } = setup();
+        } = setup(true);
 
         let target = Address::generate(&env);
         let fn_name = symbol_short!("hello");
@@ -379,6 +399,32 @@ mod schedule {
     }
 
     #[test]
+    fn without_initialize_self_managed() {
+        let env = Env::default();
+        env.mock_all_auths();
+
+        let contract_id = env.register_contract(None, TimeLockController);
+        let client = TimeLockControllerClient::new(&env, &contract_id);
+
+        set_env_timestamp(&env, current_timestamp());
+
+        let target = contract_id.clone();
+        let fn_name = Symbol::new(&env, "update_min_delay");
+        let new_delay = MIN_DELAY + 100;
+        let data = (new_delay,).into_val(&env);
+        let salt = BytesN::random(&env);
+        let delay = MIN_DELAY + 10;
+
+        let caller = Address::generate(&env);
+        assert_eq!(
+            client.try_schedule(&caller, &target, &fn_name, &data, &salt, &None, &delay),
+            Err(Ok(Error::from_contract_error(
+                TimeLockError::NotPermitted as u32
+            )))
+        );
+    }
+
+    #[test]
     #[should_panic = "Error(Contract, #3)"]
     fn twice_should_panic() {
         let Context {
@@ -388,7 +434,7 @@ mod schedule {
             proposer,
             executor: _,
             admin: _,
-        } = setup();
+        } = setup(true);
 
         let target = Address::generate(&env);
         let fn_name = symbol_short!("hello");
@@ -408,7 +454,7 @@ mod schedule {
             proposer,
             executor: _,
             admin: _,
-        } = setup();
+        } = setup(true);
 
         let target = Address::generate(&env);
         let fn_name = symbol_short!("hello");
@@ -451,7 +497,7 @@ mod execute {
             proposer,
             executor,
             admin: _,
-        } = setup();
+        } = setup(true);
 
         let example_contract_id = env.register_contract(None, IncrementContract);
         let example_client = IncrementContractClient::new(&env, &example_contract_id);
@@ -507,7 +553,7 @@ mod execute {
 
         let actual_events = env.events().all();
         let event_len = actual_events.len();
-        assert_eq!(event_len, 7);
+        assert_eq!(event_len, 8);
 
         assert_eq! {
             actual_events.slice(event_len - 1..),
@@ -537,7 +583,7 @@ mod execute {
             proposer,
             executor,
             admin: _,
-        } = setup();
+        } = setup(true);
 
         let example_contract_id = env.register_contract(None, IncrementContract);
         let example_client = IncrementContractClient::new(&env, &example_contract_id);
@@ -595,7 +641,7 @@ mod execute {
             proposer,
             executor,
             admin: _,
-        } = setup();
+        } = setup(true);
 
         let example_contract_id = env.register_contract(None, IncrementContract);
 
@@ -636,7 +682,7 @@ mod execute {
             proposer,
             executor,
             admin: _,
-        } = setup();
+        } = setup(true);
 
         let example_contract_id = env.register_contract(None, IncrementContract);
 
@@ -677,7 +723,7 @@ mod execute {
             proposer,
             executor,
             admin: _,
-        } = setup();
+        } = setup(true);
 
         let example_contract_id = env.register_contract(None, IncrementContract);
 
@@ -719,7 +765,7 @@ mod execute {
             proposer,
             executor,
             admin: _,
-        } = setup();
+        } = setup(true);
 
         let example_contract_id = env.register_contract(None, IncrementContract);
 
@@ -760,7 +806,7 @@ mod execute {
             proposer,
             executor,
             admin: _,
-        } = setup();
+        } = setup(true);
 
         let example_contract_id = env.register_contract(None, IncrementContract);
 
@@ -789,7 +835,7 @@ mod execute {
             proposer,
             executor: _,
             admin: _,
-        } = setup();
+        } = setup(true);
 
         let example_contract_id = env.register_contract(None, IncrementContract);
 
@@ -818,7 +864,7 @@ mod execute {
             proposer: _,
             executor,
             admin: _,
-        } = setup();
+        } = setup(true);
 
         let example_contract_id = env.register_contract(None, IncrementContract);
 
@@ -843,7 +889,7 @@ mod execute {
             proposer,
             executor,
             admin: _,
-        } = setup();
+        } = setup(true);
 
         let example_contract_id = env.register_contract(None, IncrementContract);
 
@@ -869,7 +915,7 @@ mod execute {
             proposer,
             executor,
             admin: _,
-        } = setup();
+        } = setup(true);
 
         let example_contract_id = env.register_contract(None, IncrementContract);
 
@@ -902,7 +948,7 @@ mod cancel {
             proposer,
             executor: _,
             admin: _,
-        } = setup();
+        } = setup(true);
 
         let target = Address::generate(&env);
         let fn_name = symbol_short!("hello");
@@ -950,7 +996,7 @@ mod cancel {
 
         let actual_events = env.events().all();
         let event_len = actual_events.len();
-        assert_eq!(event_len, 7);
+        assert_eq!(event_len, 8);
 
         assert_eq! {
             actual_events.slice(event_len - 1..),
@@ -974,7 +1020,7 @@ mod cancel {
             proposer,
             executor: _,
             admin: _,
-        } = setup();
+        } = setup(true);
 
         set_env_timestamp(&env, current_timestamp());
 
@@ -1023,7 +1069,7 @@ mod cancel {
 
         let actual_events = env.events().all();
         let event_len = actual_events.len();
-        assert_eq!(event_len, 7);
+        assert_eq!(event_len, 8);
 
         assert_eq! {
             actual_events.slice(event_len - 1..),
@@ -1048,7 +1094,7 @@ mod cancel {
             proposer,
             executor: _,
             admin: _,
-        } = setup();
+        } = setup(true);
 
         let target = Address::generate(&env);
         let fn_name = symbol_short!("hello");
@@ -1074,7 +1120,7 @@ mod cancel {
             proposer,
             executor: _,
             admin: _,
-        } = setup();
+        } = setup(true);
 
         let operation_id = BytesN::random(&env);
 
@@ -1091,7 +1137,7 @@ mod cancel {
             proposer,
             executor,
             admin: _,
-        } = setup();
+        } = setup(true);
 
         let example_contract_id = env.register_contract(None, IncrementContract);
 
@@ -1126,7 +1172,7 @@ mod update_min_delay {
             proposer: _,
             executor: _,
             admin: _,
-        } = setup();
+        } = setup(true);
 
         let delay = MIN_DELAY + 10;
         client.update_min_delay(&delay);
@@ -1134,7 +1180,7 @@ mod update_min_delay {
 
         let actual_events = env.events().all();
         let event_len = actual_events.len();
-        assert_eq!(event_len, 6);
+        assert_eq!(event_len, 7);
 
         assert_eq! {
             actual_events.slice(event_len - 1..),
@@ -1183,7 +1229,7 @@ mod grant_role {
                 proposer: _,
                 executor: _,
                 admin,
-            } = setup();
+            } = setup(true);
 
             let new_proposer = Address::generate(&env);
             client.grant_role(&new_proposer, &RoleLabel::Proposer);
@@ -1215,7 +1261,7 @@ mod grant_role {
                 proposer: _,
                 executor: _,
                 admin: _,
-            } = setup();
+            } = setup(true);
 
             let new_proposer = Address::generate(&env);
             assert_eq!(client.grant_role(&new_proposer, &RoleLabel::Proposer), true);
@@ -1253,7 +1299,7 @@ mod grant_role {
                 proposer: _,
                 executor: _,
                 admin,
-            } = setup();
+            } = setup(true);
 
             let new_executor = Address::generate(&env);
             client.grant_role(&new_executor, &RoleLabel::Executor);
@@ -1285,7 +1331,7 @@ mod grant_role {
                 proposer: _,
                 executor: _,
                 admin: _,
-            } = setup();
+            } = setup(true);
 
             let new_executor = Address::generate(&env);
             assert_eq!(client.grant_role(&new_executor, &RoleLabel::Executor), true);
@@ -1324,7 +1370,7 @@ mod grant_role {
                 proposer: _,
                 executor: _,
                 admin,
-            } = setup();
+            } = setup(true);
 
             let new_canceller = Address::generate(&env);
             client.grant_role(&new_canceller, &RoleLabel::Canceller);
@@ -1356,7 +1402,7 @@ mod grant_role {
                 proposer: _,
                 executor: _,
                 admin: _,
-            } = setup();
+            } = setup(true);
 
             let new_canceller = Address::generate(&env);
             assert_eq!(
@@ -1402,7 +1448,7 @@ mod revoke_role {
                 proposer: _,
                 executor: _,
                 admin,
-            } = setup();
+            } = setup(true);
 
             let new_proposer = Address::generate(&env);
             client.grant_role(&new_proposer, &RoleLabel::Proposer);
@@ -1437,7 +1483,7 @@ mod revoke_role {
                 proposer: _,
                 executor: _,
                 admin: _,
-            } = setup();
+            } = setup(true);
 
             let new_proposer = Address::generate(&env);
             client.grant_role(&new_proposer, &RoleLabel::Proposer);
@@ -1484,7 +1530,7 @@ mod revoke_role {
                 proposer: _,
                 executor: _,
                 admin,
-            } = setup();
+            } = setup(true);
 
             let new_executor = Address::generate(&env);
             client.grant_role(&new_executor, &RoleLabel::Executor);
@@ -1519,7 +1565,7 @@ mod revoke_role {
                 proposer: _,
                 executor: _,
                 admin: _,
-            } = setup();
+            } = setup(true);
 
             let new_executor = Address::generate(&env);
             client.grant_role(&new_executor, &RoleLabel::Executor);
@@ -1566,7 +1612,7 @@ mod revoke_role {
                 proposer: _,
                 executor: _,
                 admin,
-            } = setup();
+            } = setup(true);
 
             let new_canceller = Address::generate(&env);
             client.grant_role(&new_canceller, &RoleLabel::Canceller);
@@ -1604,7 +1650,7 @@ mod revoke_role {
                 proposer: _,
                 executor: _,
                 admin: _,
-            } = setup();
+            } = setup(true);
 
             let new_canceller = Address::generate(&env);
             client.grant_role(&new_canceller, &RoleLabel::Canceller);
@@ -1655,7 +1701,7 @@ mod update_admin {
             proposer: _,
             executor: _,
             admin,
-        } = setup();
+        } = setup(true);
 
         let new_admin = Address::generate(&env);
         client.update_admin(&new_admin);
@@ -1692,7 +1738,25 @@ mod update_admin {
             )))
         );
     }
+
+    #[test]
+    fn not_initialized_should_panic() {
+        let env = Env::default();
+        env.mock_all_auths();
+
+        let contract_id = env.register_contract(None, TimeLockController);
+        let client = TimeLockControllerClient::new(&env, &contract_id);
+
+        let new_admin = Address::generate(&env);
+        assert_eq!(
+            client.try_update_admin(&new_admin),
+            Err(Ok(Error::from_contract_error(
+                TimeLockError::NotPermitted as u32
+            )))
+        );
+    }
 }
+
 mod integrate_test_with_increment {
     use super::*;
     use soroban_sdk::{vec, Address, BytesN, Env, IntoVal, String, Symbol};
@@ -1713,6 +1777,7 @@ mod integrate_test_with_increment {
             &vec![&env, proposer.clone()],
             &vec![&env, executor.clone()],
             &Address::generate(&env),
+            &true,
         );
 
         let example_contract_id = env.register_contract(None, IncrementContract);
@@ -1754,6 +1819,7 @@ mod integrate_test_with_increment {
             &vec![&env, proposer.clone()],
             &vec![&env, executor.clone()],
             &Address::generate(&env),
+            &true,
         );
 
         let example_contract_id = env.register_contract(None, IncrementContract);
@@ -1791,6 +1857,7 @@ mod integrate_test_with_increment {
             &vec![&env, proposer.clone()],
             &vec![&env, executor.clone()],
             &Address::generate(&env),
+            &true,
         );
 
         let example_contract_id = env.register_contract(None, IncrementContract);
@@ -1827,6 +1894,7 @@ mod integrate_test_with_increment {
             &vec![&env, proposer.clone()],
             &vec![&env, executor.clone()],
             &Address::generate(&env),
+            &true,
         );
 
         let example_contract_id = env.register_contract(None, IncrementContract);
@@ -1895,6 +1963,7 @@ mod integrate_test_with_increment {
             &vec![&env, proposer.clone()],
             &vec![&env, executor.clone()],
             &Address::generate(&env),
+            &true,
         );
 
         let example_contract_id = env.register_contract(None, IncrementContract);
@@ -1923,5 +1992,674 @@ mod integrate_test_with_increment {
         let contract_config = example_client.get_contract_info(&key);
         assert_eq!(contract_config.name, config.name);
         assert_eq!(contract_config.owner, config.owner);
+    }
+}
+
+mod updata_self_with_time_lock {
+    use super::*;
+    use soroban_sdk::{BytesN, IntoVal, Symbol};
+
+    #[test]
+    fn not_exist_function() {
+        let Context {
+            env,
+            contract: contract_id,
+            time_lock: client,
+            proposer: _,
+            executor: _,
+            admin,
+        } = setup(true);
+
+        let target = contract_id.clone();
+        let fn_name = Symbol::new(&env, "not_exist_function");
+        let data = ().into_val(&env);
+        let salt = BytesN::random(&env);
+        let delay: u64 = MIN_DELAY + 10;
+
+        client.schedule(&admin, &target, &fn_name, &data, &salt, &None, &delay);
+
+        set_env_timestamp(&env, current_timestamp());
+
+        assert_eq!(
+            client.try_execute(&admin, &target, &fn_name, &data, &salt, &None),
+            Err(Ok(Error::from_contract_error(
+                TimeLockError::InvalidParams as u32
+            )))
+        );
+    }
+
+    mod update_min_delay {
+        use super::*;
+        use soroban_sdk::{BytesN, IntoVal, Symbol};
+
+        #[test]
+        fn is_ok() {
+            let Context {
+                env,
+                contract: contract_id,
+                time_lock: client,
+                proposer: _,
+                executor: _,
+                admin,
+            } = setup(false);
+
+            let target = contract_id.clone();
+            let fn_name = Symbol::new(&env, "update_min_delay");
+            let new_delay = MIN_DELAY + 100;
+            let data = (new_delay,).into_val(&env);
+            let salt = BytesN::random(&env);
+            let delay = MIN_DELAY + 10;
+            let predecessor = None;
+
+            let operation_id =
+                client.schedule(&admin, &target, &fn_name, &data, &salt, &None, &delay);
+
+            assert_eq!(
+                env.auths(),
+                std::vec![(
+                    admin.clone(),
+                    AuthorizedInvocation {
+                        function: AuthorizedFunction::Contract((
+                            contract_id.clone(),
+                            Symbol::new(&env, "schedule"),
+                            (
+                                &admin,
+                                &target,
+                                &fn_name,
+                                data.clone(),
+                                salt.clone(),
+                                predecessor.clone(),
+                                delay
+                            )
+                                .into_val(&env)
+                        )),
+                        sub_invocations: std::vec![]
+                    }
+                )]
+            );
+
+            set_env_timestamp(&env, current_timestamp());
+
+            client.execute(&admin, &target, &fn_name, &data, &salt, &predecessor);
+
+            assert_eq!(
+                env.auths(),
+                std::vec![(
+                    admin.clone(),
+                    AuthorizedInvocation {
+                        function: AuthorizedFunction::Contract((
+                            contract_id.clone(),
+                            Symbol::new(&env, "execute"),
+                            (
+                                &admin,
+                                &target,
+                                &fn_name,
+                                data.clone(),
+                                salt.clone(),
+                                predecessor.clone(),
+                            )
+                                .into_val(&env)
+                        )),
+                        sub_invocations: std::vec![]
+                    }
+                )]
+            );
+
+            assert_eq!(client.get_min_delay(), new_delay);
+            assert_eq!(client.get_schedule_lock_time(&operation_id), DONE_TIMESTAMP);
+        }
+
+        #[test]
+        fn invoke_params_invalid() {
+            let Context {
+                env,
+                contract: contract_id,
+                time_lock: client,
+                proposer: _,
+                executor: _,
+                admin,
+            } = setup(false);
+
+            let target = contract_id.clone();
+            let fn_name = Symbol::new(&env, "update_min_delay");
+            let new_delay = -100_i64;
+            let data = ().into_val(&env);
+            let data_1 = (new_delay,).into_val(&env);
+            let salt = BytesN::random(&env);
+            let delay = MIN_DELAY + 10;
+            let predecessor = None;
+
+            client.schedule(
+                &admin,
+                &target,
+                &fn_name,
+                &data,
+                &salt,
+                &predecessor,
+                &delay,
+            );
+            client.schedule(
+                &admin,
+                &target,
+                &fn_name,
+                &data_1,
+                &salt,
+                &predecessor,
+                &delay,
+            );
+
+            set_env_timestamp(&env, current_timestamp());
+
+            assert_eq!(
+                client.try_execute(&admin, &target, &fn_name, &data, &salt, &predecessor),
+                Err(Ok(Error::from_contract_error(
+                    TimeLockError::InvalidParams as u32
+                )))
+            );
+
+            assert_eq!(
+                client.try_execute(&admin, &target, &fn_name, &data_1, &salt, &predecessor),
+                Err(Ok(Error::from_contract_error(
+                    TimeLockError::InvalidParams as u32
+                )))
+            );
+        }
+
+        #[test]
+        fn direct_call() {
+            let Context {
+                env: _,
+                contract: _,
+                time_lock: client,
+                proposer: _,
+                executor: _,
+                admin: _,
+            } = setup(false);
+
+            let new_delay = MIN_DELAY + 100;
+            assert_eq!(
+                client.try_update_min_delay(&new_delay),
+                Err(Ok(Error::from_contract_error(
+                    TimeLockError::NotPermitted as u32
+                )))
+            );
+        }
+    }
+
+    mod update_admin {
+        use super::*;
+        use soroban_sdk::{Address, BytesN, IntoVal, Symbol};
+
+        #[test]
+        fn is_ok() {
+            let Context {
+                env,
+                contract: contract_id,
+                time_lock: client,
+                proposer: _,
+                executor: _,
+                admin,
+            } = setup(false);
+
+            let target = contract_id.clone();
+            let fn_name = Symbol::new(&env, "update_admin");
+            let new_admin = Address::generate(&env);
+            let data = (new_admin.clone(),).into_val(&env);
+            let salt = BytesN::random(&env);
+            let delay = MIN_DELAY + 10;
+            let predecessor = None;
+
+            let operation_id =
+                client.schedule(&admin, &target, &fn_name, &data, &salt, &None, &delay);
+
+            assert_eq!(
+                env.auths(),
+                std::vec![(
+                    admin.clone(),
+                    AuthorizedInvocation {
+                        function: AuthorizedFunction::Contract((
+                            contract_id.clone(),
+                            Symbol::new(&env, "schedule"),
+                            (
+                                &admin,
+                                &target,
+                                &fn_name,
+                                data.clone(),
+                                salt.clone(),
+                                predecessor.clone(),
+                                delay
+                            )
+                                .into_val(&env)
+                        )),
+                        sub_invocations: std::vec![]
+                    }
+                )]
+            );
+
+            set_env_timestamp(&env, current_timestamp());
+
+            client.execute(&admin, &target, &fn_name, &data, &salt, &predecessor);
+
+            assert_eq!(
+                env.auths(),
+                std::vec![(
+                    admin.clone(),
+                    AuthorizedInvocation {
+                        function: AuthorizedFunction::Contract((
+                            contract_id.clone(),
+                            Symbol::new(&env, "execute"),
+                            (
+                                &admin,
+                                &target,
+                                &fn_name,
+                                data.clone(),
+                                salt.clone(),
+                                predecessor.clone(),
+                            )
+                                .into_val(&env)
+                        )),
+                        sub_invocations: std::vec![]
+                    }
+                )]
+            );
+
+            assert_eq!(client.is_admin(&admin), false);
+            assert_eq!(client.is_admin(&new_admin), true);
+            assert_eq!(client.get_schedule_lock_time(&operation_id), DONE_TIMESTAMP);
+        }
+
+        #[test]
+        fn invoke_params_invalid() {
+            let Context {
+                env,
+                contract: contract_id,
+                time_lock: client,
+                proposer: _,
+                executor: _,
+                admin,
+            } = setup(false);
+
+            let target = contract_id.clone();
+            let fn_name = Symbol::new(&env, "update_admin");
+            let new_admin = 100_u64;
+            let data = ().into_val(&env);
+            let data_1 = (new_admin,).into_val(&env);
+            let salt = BytesN::random(&env);
+            let delay = MIN_DELAY + 10;
+            let predecessor = None;
+
+            client.schedule(
+                &admin,
+                &target,
+                &fn_name,
+                &data,
+                &salt,
+                &predecessor,
+                &delay,
+            );
+            client.schedule(
+                &admin,
+                &target,
+                &fn_name,
+                &data_1,
+                &salt,
+                &predecessor,
+                &delay,
+            );
+
+            set_env_timestamp(&env, current_timestamp());
+
+            assert_eq!(
+                client.try_execute(&admin, &target, &fn_name, &data, &salt, &predecessor),
+                Err(Ok(Error::from_contract_error(
+                    TimeLockError::InvalidParams as u32
+                )))
+            );
+
+            assert_eq!(
+                client.try_execute(&admin, &target, &fn_name, &data_1, &salt, &predecessor),
+                Err(Ok(Error::from_contract_error(
+                    TimeLockError::InvalidParams as u32
+                )))
+            );
+        }
+
+        #[test]
+        fn direct_call() {
+            let Context {
+                env,
+                contract: _,
+                time_lock: client,
+                proposer: _,
+                executor: _,
+                admin: _,
+            } = setup(false);
+
+            let new_admin = Address::generate(&env);
+            assert_eq!(
+                client.try_update_admin(&new_admin),
+                Err(Ok(Error::from_contract_error(
+                    TimeLockError::NotPermitted as u32
+                )))
+            );
+        }
+    }
+
+    mod grant_role {
+        use super::*;
+        use soroban_sdk::{Address, BytesN, IntoVal, Symbol};
+
+        #[test]
+        fn is_ok() {
+            let Context {
+                env,
+                contract: contract_id,
+                time_lock: client,
+                proposer: _,
+                executor: _,
+                admin,
+            } = setup(false);
+
+            let target = contract_id.clone();
+            let fn_name = Symbol::new(&env, "grant_role");
+            let new_role = RoleLabel::Proposer;
+            let new_address = Address::generate(&env);
+            let data = (new_address.clone(), new_role.clone()).into_val(&env);
+            let salt = BytesN::random(&env);
+            let delay = MIN_DELAY + 10;
+            let predecessor = None;
+
+            let operation_id =
+                client.schedule(&admin, &target, &fn_name, &data, &salt, &None, &delay);
+
+            assert_eq!(
+                env.auths(),
+                std::vec![(
+                    admin.clone(),
+                    AuthorizedInvocation {
+                        function: AuthorizedFunction::Contract((
+                            contract_id.clone(),
+                            Symbol::new(&env, "schedule"),
+                            (
+                                &admin,
+                                &target,
+                                &fn_name,
+                                data.clone(),
+                                salt.clone(),
+                                predecessor.clone(),
+                                delay
+                            )
+                                .into_val(&env)
+                        )),
+                        sub_invocations: std::vec![]
+                    }
+                )]
+            );
+
+            set_env_timestamp(&env, current_timestamp());
+
+            client.execute(&admin, &target, &fn_name, &data, &salt, &predecessor);
+
+            assert_eq!(
+                env.auths(),
+                std::vec![(
+                    admin.clone(),
+                    AuthorizedInvocation {
+                        function: AuthorizedFunction::Contract((
+                            contract_id.clone(),
+                            Symbol::new(&env, "execute"),
+                            (
+                                &admin,
+                                &target,
+                                &fn_name,
+                                data.clone(),
+                                salt.clone(),
+                                predecessor.clone(),
+                            )
+                                .into_val(&env)
+                        )),
+                        sub_invocations: std::vec![]
+                    }
+                )]
+            );
+
+            assert_eq!(client.has_role(&new_address, &new_role), true);
+            assert_eq!(client.get_schedule_lock_time(&operation_id), DONE_TIMESTAMP);
+        }
+
+        #[test]
+        fn invoke_params_invalid() {
+            let Context {
+                env,
+                contract: contract_id,
+                time_lock: client,
+                proposer: _,
+                executor: _,
+                admin,
+            } = setup(false);
+
+            let target = contract_id.clone();
+            let fn_name = Symbol::new(&env, "grant_role");
+            let valid_role = RoleLabel::Proposer;
+            let invalid_role = -100_i64;
+            let invalid_address = 100_u64;
+            let valid_address = Address::generate(&env);
+            let predecessor = None;
+            let data = ().into_val(&env);
+            let data_1 = (invalid_address.clone(), valid_role.clone()).into_val(&env);
+            let data_2 = (valid_address.clone(), invalid_role.clone()).into_val(&env);
+            let data_3 = (invalid_address.clone(), invalid_role.clone()).into_val(&env);
+            let data_4 = (valid_address.clone(),).into_val(&env);
+            let salt = BytesN::random(&env);
+            let delay = MIN_DELAY + 10;
+
+            client.schedule(
+                &admin,
+                &target,
+                &fn_name,
+                &data,
+                &salt,
+                &predecessor,
+                &delay,
+            );
+            client.schedule(
+                &admin,
+                &target,
+                &fn_name,
+                &data_1,
+                &salt,
+                &predecessor,
+                &delay,
+            );
+            client.schedule(
+                &admin,
+                &target,
+                &fn_name,
+                &data_2,
+                &salt,
+                &predecessor,
+                &delay,
+            );
+            client.schedule(
+                &admin,
+                &target,
+                &fn_name,
+                &data_3,
+                &salt,
+                &predecessor,
+                &delay,
+            );
+            client.schedule(
+                &admin,
+                &target,
+                &fn_name,
+                &data_4,
+                &salt,
+                &predecessor,
+                &delay,
+            );
+
+            set_env_timestamp(&env, current_timestamp());
+
+            assert_eq!(
+                client.try_execute(&admin, &target, &fn_name, &data, &salt, &predecessor),
+                Err(Ok(Error::from_contract_error(
+                    TimeLockError::InvalidParams as u32
+                )))
+            );
+
+            assert_eq!(
+                client.try_execute(&admin, &target, &fn_name, &data_1, &salt, &predecessor),
+                Err(Ok(Error::from_contract_error(
+                    TimeLockError::InvalidParams as u32
+                )))
+            );
+
+            assert_eq!(
+                client.try_execute(&admin, &target, &fn_name, &data_2, &salt, &predecessor),
+                Err(Ok(Error::from_contract_error(
+                    TimeLockError::InvalidParams as u32
+                )))
+            );
+
+            assert_eq!(
+                client.try_execute(&admin, &target, &fn_name, &data_3, &salt, &predecessor),
+                Err(Ok(Error::from_contract_error(
+                    TimeLockError::InvalidParams as u32
+                )))
+            );
+
+            assert_eq!(
+                client.try_execute(&admin, &target, &fn_name, &data_4, &salt, &predecessor),
+                Err(Ok(Error::from_contract_error(
+                    TimeLockError::InvalidParams as u32
+                )))
+            );
+        }
+
+        #[test]
+        fn direct_call() {
+            let Context {
+                env,
+                contract: _,
+                time_lock: client,
+                proposer: _,
+                executor: _,
+                admin: _,
+            } = setup(false);
+
+            let new_role = RoleLabel::Proposer;
+            let new_address = Address::generate(&env);
+            assert_eq!(
+                client.try_grant_role(&new_address, &new_role),
+                Err(Ok(Error::from_contract_error(
+                    TimeLockError::NotPermitted as u32
+                )))
+            );
+        }
+    }
+
+    mod revoke_role {
+        use super::*;
+        use soroban_sdk::{BytesN, IntoVal, Symbol};
+
+        #[test]
+        fn is_ok() {
+            let Context {
+                env,
+                contract: contract_id,
+                time_lock: client,
+                proposer,
+                executor: _,
+                admin,
+            } = setup(false);
+
+            let target = contract_id.clone();
+            let fn_name = Symbol::new(&env, "revoke_role");
+            let role = RoleLabel::Proposer;
+            let data = (proposer.clone(), role.clone()).into_val(&env);
+            let salt = BytesN::random(&env);
+            let delay = MIN_DELAY + 10;
+            let predecessor = None;
+
+            assert_eq!(client.has_role(&proposer, &role), true);
+
+            let operation_id =
+                client.schedule(&admin, &target, &fn_name, &data, &salt, &None, &delay);
+
+            assert_eq!(
+                env.auths(),
+                std::vec![(
+                    admin.clone(),
+                    AuthorizedInvocation {
+                        function: AuthorizedFunction::Contract((
+                            contract_id.clone(),
+                            Symbol::new(&env, "schedule"),
+                            (
+                                &admin,
+                                &target,
+                                &fn_name,
+                                data.clone(),
+                                salt.clone(),
+                                predecessor.clone(),
+                                delay
+                            )
+                                .into_val(&env)
+                        )),
+                        sub_invocations: std::vec![]
+                    }
+                )]
+            );
+
+            set_env_timestamp(&env, current_timestamp());
+
+            client.execute(&admin, &target, &fn_name, &data, &salt, &predecessor);
+
+            assert_eq!(
+                env.auths(),
+                std::vec![(
+                    admin.clone(),
+                    AuthorizedInvocation {
+                        function: AuthorizedFunction::Contract((
+                            contract_id.clone(),
+                            Symbol::new(&env, "execute"),
+                            (
+                                &admin,
+                                &target,
+                                &fn_name,
+                                data.clone(),
+                                salt.clone(),
+                                predecessor.clone(),
+                            )
+                                .into_val(&env)
+                        )),
+                        sub_invocations: std::vec![]
+                    }
+                )]
+            );
+
+            assert_eq!(client.has_role(&proposer, &role), false);
+            assert_eq!(client.get_schedule_lock_time(&operation_id), DONE_TIMESTAMP);
+        }
+
+        #[test]
+        fn direct_call() {
+            let Context {
+                env: _,
+                contract: _,
+                time_lock: client,
+                proposer,
+                executor: _,
+                admin: _,
+            } = setup(false);
+
+            let role = RoleLabel::Proposer;
+            assert_eq!(
+                client.try_revoke_role(&proposer, &role),
+                Err(Ok(Error::from_contract_error(
+                    TimeLockError::NotPermitted as u32
+                )))
+            );
+        }
     }
 }

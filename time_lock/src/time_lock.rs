@@ -1,8 +1,10 @@
 use soroban_sdk::InvokeError;
 use soroban_sdk::{
     contracterror, contracttype, panic_with_error, xdr::ToXdr, Address, Bytes, BytesN, Env, Symbol,
-    Val, Vec,
+    TryFromVal, Val, Vec,
 };
+
+use core::primitive::u64;
 
 use crate::role_base;
 use crate::role_base::RoleLabel;
@@ -15,6 +17,7 @@ const MAX_ACCOUNTS_NUM: u32 = 10;
 pub enum DataKey {
     Scheduler(BytesN<32>),
     MinDelay,
+    SelfManaged,
 }
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
@@ -72,6 +75,7 @@ pub(crate) fn initialize(
     proposers: &Vec<Address>,
     executors: &Vec<Address>,
     admin: &Address,
+    self_managed: bool,
 ) {
     if role_base::has_admin(e) {
         panic_with_error!(e, TimeLockError::AlreadyInitialized);
@@ -90,6 +94,8 @@ pub(crate) fn initialize(
     }
 
     update_min_delay(e, min_delay);
+
+    _set_self_managed(e, self_managed);
 
     role_base::set_admin(e, admin);
 
@@ -147,20 +153,17 @@ pub(crate) fn execute(
     data: &Vec<Val>,
     salt: &BytesN<32>,
     predecessor: &Option<BytesN<32>>,
+    is_native: bool,
 ) {
     let operation_id = _hash_call(e, &target, &fn_name, &data, &salt, &predecessor);
     _execute_check(e, &operation_id, predecessor);
 
-    let result = e.try_invoke_contract::<(), InvokeError>(&target, &fn_name, data.clone());
-
-    match result {
-        Ok(_) => {}
-        Err(_) => {
-            panic_with_error!(e, TimeLockError::ExecuteFailed);
-        }
+    if is_native {
+        _exec_native(e, &fn_name, &data);
+    } else {
+        _exec_external(e, &target, &fn_name, &data);
     }
 
-    // Update the state of the operation to executed
     e.storage()
         .persistent()
         .set(&DataKey::Scheduler(operation_id.clone()), &DONE_TIMESTAMP);
@@ -197,7 +200,6 @@ pub(crate) fn cancel(e: &Env, operation_id: &BytesN<32>) {
 
 pub(crate) fn update_min_delay(e: &Env, delay: u64) {
     e.storage().instance().set(&DataKey::MinDelay, &delay);
-
     e.events()
         .publish((Symbol::new(e, "MinDelayUpdated"),), delay);
 }
@@ -209,6 +211,21 @@ pub(crate) fn get_schedule_lock_time(e: &Env, operation_id: &BytesN<32>) -> u64 
     } else {
         0_u64
     }
+}
+
+pub(crate) fn is_self_managed(e: &Env) -> bool {
+    e.storage()
+        .instance()
+        .get(&DataKey::SelfManaged)
+        .unwrap_or(false)
+}
+
+fn _set_self_managed(e: &Env, self_managed: bool) {
+    e.storage()
+        .instance()
+        .set(&DataKey::SelfManaged, &self_managed);
+    e.events()
+        .publish((Symbol::new(e, "SelfManaged"),), self_managed);
 }
 
 fn _get_operation_state(ledger_time: u64, lock_time: u64) -> OperationState {
@@ -255,6 +272,32 @@ fn _execute_check(e: &Env, operation_id: &BytesN<32>, predecessor: &Option<Bytes
     }
 }
 
+fn _exec_external(e: &Env, target: &Address, fn_name: &Symbol, data: &Vec<Val>) {
+    let result = e.try_invoke_contract::<(), InvokeError>(&target, &fn_name, data.clone());
+
+    match result {
+        Ok(_) => {}
+        Err(_) => {
+            panic_with_error!(e, TimeLockError::ExecuteFailed);
+        }
+    }
+}
+
+fn _exec_native(e: &Env, fn_name: &Symbol, data: &Vec<Val>) {
+    let fn_name = fn_name.clone();
+    if fn_name == Symbol::new(e, "update_min_delay") {
+        _update_min_delay(e, data);
+    } else if fn_name == Symbol::new(e, "grant_role") {
+        _update_role(e, data, true);
+    } else if fn_name == Symbol::new(e, "revoke_role") {
+        _update_role(e, data, false);
+    } else if fn_name == Symbol::new(e, "update_admin") {
+        _update_admin(e, data);
+    } else {
+        panic_with_error!(e, TimeLockError::InvalidParams);
+    }
+}
+
 fn _hash_call(
     e: &Env,
     target: &Address,
@@ -281,4 +324,60 @@ fn _is_contract(env: &Env, address: &Address) -> bool {
         return true;
     }
     false
+}
+
+fn _update_min_delay(e: &Env, data: &Vec<Val>) {
+    let delay = data.get(0);
+    if let Some(delay) = delay {
+        let p = u64::try_from_val(e, &delay);
+        if let Ok(delay) = p {
+            update_min_delay(e, delay);
+        } else {
+            panic_with_error!(e, TimeLockError::InvalidParams);
+        }
+    } else {
+        panic_with_error!(e, TimeLockError::InvalidParams);
+    }
+}
+
+fn _update_role(e: &Env, data: &Vec<Val>, is_grand: bool) {
+    let account = data.get(0);
+    let role = data.get(1);
+    if let Some(account) = account {
+        let p = Address::try_from_val(e, &account);
+        if let Ok(account) = p {
+            if let Some(role) = role {
+                let p = RoleLabel::try_from_val(e, &role);
+                if let Ok(role) = p {
+                    if is_grand {
+                        role_base::grant_role(e, &account, &role);
+                    } else {
+                        role_base::revoke_role(e, &account, &role);
+                    }
+                } else {
+                    panic_with_error!(e, TimeLockError::InvalidParams);
+                }
+            } else {
+                panic_with_error!(e, TimeLockError::InvalidParams);
+            }
+        } else {
+            panic_with_error!(e, TimeLockError::InvalidParams);
+        }
+    } else {
+        panic_with_error!(e, TimeLockError::InvalidParams);
+    }
+}
+
+fn _update_admin(e: &Env, data: &Vec<Val>) {
+    let admin = data.get(0);
+    if let Some(admin) = admin {
+        let p = Address::try_from_val(e, &admin);
+        if let Ok(admin) = p {
+            role_base::set_admin(e, &admin);
+        } else {
+            panic_with_error!(e, TimeLockError::InvalidParams);
+        }
+    } else {
+        panic_with_error!(e, TimeLockError::InvalidParams);
+    }
 }
