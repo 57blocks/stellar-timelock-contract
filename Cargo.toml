@@ -2,6 +2,7 @@
 resolver = "2"
 members = [
   "time_lock",
+  "owner",
   "tests/example",
   "tests",
   "tests/common",
@@ -15,6 +16,7 @@ soroban-sdk = "20.3.2"
 time-lock-example-contract = { path = "tests/example" }
 time-lock = { path = "time_lock" }
 time-lock-tests-common = { path = "tests/common" }
+owner = { path = "owner" }
 
 [profile.release]
 opt-level = "z"

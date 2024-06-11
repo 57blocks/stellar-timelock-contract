@@ -12,4 +12,6 @@ pub mod test {
     pub use crate::time_lock::{CallExecutedEvent, CallScheduledEvent, DataKey, TimeLockError};
 
     pub use crate::role_base::{ RoleKey, RoleLabel};
+
+    pub use owner::owner::OwnerError;
 }
