@@ -2,6 +2,8 @@ use core::panic;
 
 use soroban_sdk::{contract, contracterror, contractimpl, contracttype, log, panic_with_error, Address, BytesN, Env, String};
 
+use owner::owner;
+
 #[contracterror]
 #[derive(Copy, Clone, Debug, Eq, PartialEq, PartialOrd, Ord)]
 #[repr(u32)]
@@ -19,7 +21,6 @@ pub struct ContractConfig {
 
 #[contracttype]
 pub enum DataKey {
-    Owner,
     Counter,
     AccountTotal(Address),
     ContractInfo(BytesN<32>),
@@ -32,14 +33,16 @@ pub struct IncrementContract;
 impl IncrementContract {
 
     pub fn initialize(env: Env, owner: Address) {
-        if env.storage().instance().has(&DataKey::Owner) {
+        if owner::has_owner(&env) {
             panic!("Contract already initialized");
         }
-        env.storage().instance().set(&DataKey::Owner, &owner);
+       
+        owner::set_owner(&env, &owner);
     }
 
     /// Increment increments an internal counter, and returns the value.
     pub fn increment(env: Env, num: u32) -> u32 {
+        owner::only_owner(&env);
         // Get the current count.
         let mut count: u32 = env.storage().instance().get(&DataKey::Counter).unwrap_or(0); // If no value set, assume 0.
         log!(&env, "count: {}", count);
@@ -61,6 +64,7 @@ impl IncrementContract {
     }
 
     pub fn increment_five(env: Env) -> u32 {
+        owner::only_owner(&env);
         // Get the current count.
         let mut count: u32 = env.storage().instance().get(&DataKey::Counter).unwrap_or(0); // If no value set, assume 0.
         log!(&env, "count: {}", count);
@@ -82,14 +86,12 @@ impl IncrementContract {
     }
 
     pub fn increment_owner(env: Env, num: u32) -> u32 {
-        let owner: Address = env.storage().instance().get(&DataKey::Owner).unwrap();
-        owner.require_auth();
+        owner::only_owner(&env);
         IncrementContract::increment(env, num)
     }
 
     pub fn increment_account_total(env: Env, account: Address, num: u32) -> u32 {
-        let owner: Address = env.storage().instance().get(&DataKey::Owner).unwrap();
-        owner.require_auth();
+        owner::only_owner(&env);
 
         let mut count: u32 = env.storage().instance().get(&DataKey::AccountTotal(account.clone())).unwrap_or(0);
         count += num;
@@ -99,6 +101,7 @@ impl IncrementContract {
     }
 
     pub fn increment_return_error(env: Env, num: u32) -> Result<u32, Error> {
+        owner::only_owner(&env);
         if num > 100 {
            return Err(Error::LimitReached)
         }
@@ -116,6 +119,7 @@ impl IncrementContract {
     }
 
     pub fn increment_with_panic(env: Env, num: u32) -> u32 {
+        owner::only_owner(&env);
         if num > 100 {
             panic!("Limit reached")
         }
@@ -124,8 +128,7 @@ impl IncrementContract {
     }
 
     pub fn set_contract_info(env: Env, info: BytesN<32>, config: ContractConfig) {
-        let owner: Address = env.storage().instance().get(&DataKey::Owner).unwrap();
-        owner.require_auth();
+        owner::only_owner(&env);
 
         env.storage().instance().set(&DataKey::ContractInfo(info), &config);
     }

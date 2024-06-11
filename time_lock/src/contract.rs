@@ -10,6 +10,7 @@
  */
 use crate::role_base;
 use crate::role_base::RoleLabel;
+use owner::owner;
 use crate::time_lock;
 use crate::time_lock::{DataKey, TimeLockError};
 
@@ -28,24 +29,24 @@ impl TimeLockController {
      * - `min_delay`: initial minimum delay in seconds for operations
      * - `proposers`: accounts to be granted proposer and canceller roles
      * - `executors`: accounts to be granted executor role
-     * - `admin`: account to be granted admin role
-     * - `self_managed`: if true, the timelock will manage admin tasks directly; if false, these tasks
+     * - `owner`: account to be granted owner role
+     * - `self_managed`: if true, the timelock will manage owner tasks directly; if false, these tasks
      *  will have to go through the timelock process.
      */
     pub fn initialize(
-        env: Env,
+        e: Env,
         min_delay: u64,
         proposers: Vec<Address>,
         executors: Vec<Address>,
-        admin: Address,
+        owner: Address,
         self_managed: bool,
     ) {
         time_lock::initialize(
-            &env,
+            &e,
             min_delay,
             &proposers,
             &executors,
-            &admin,
+            &owner,
             self_managed,
         )
     }
@@ -58,10 +59,10 @@ impl TimeLockController {
      * Requirements:
      *
      * - the caller must have the 'proposer' role.
-     * - if the target is the timelock itself, the caller must have the 'admin' role.
+     * - if the target is the timelock itself, the caller must have the 'owner' role.
      */
     pub fn schedule(
-        env: Env,
+        e: Env,
         proposer: Address,
         target: Address,
         fn_name: Symbol,
@@ -70,13 +71,13 @@ impl TimeLockController {
         predecessor: Option<BytesN<32>>,
         delay: u64,
     ) -> BytesN<32> {
-        if target == env.current_contract_address() {
-            Self::_admin_check(&env);
+        if target == e.current_contract_address() {
+            owner::only_owner(&e);
         } else {
-            Self::_role_check(&env, &proposer, RoleLabel::Proposer);
+            Self::_role_check(&e, &proposer, RoleLabel::Proposer);
         }
 
-        time_lock::schedule(&env, &target, &fn_name, &data, &salt, &predecessor, delay)
+        time_lock::schedule(&e, &target, &fn_name, &data, &salt, &predecessor, delay)
     }
 
     /*
@@ -87,10 +88,10 @@ impl TimeLockController {
      * Requirements:
      *
      * - the caller must have the 'executor' role.
-     * - if the target is the timelock itself, the caller must have the 'admin' role.
+     * - if the target is the timelock itself, the caller must have the 'owner' role.
      */
     pub fn execute(
-        env: Env,
+        e: Env,
         executor: Address,
         target: Address,
         fn_name: Symbol,
@@ -99,14 +100,14 @@ impl TimeLockController {
         predecessor: Option<BytesN<32>>,
     ) {
         let mut is_native = false;
-        if target == env.current_contract_address() {
-            Self::_admin_check(&env);
+        if target == e.current_contract_address() {
+            owner::only_owner(&e);
             is_native = true;
         } else {
-            Self::_role_check(&env, &executor, RoleLabel::Executor);
+            Self::_role_check(&e, &executor, RoleLabel::Executor);
         }
         time_lock::execute(
-            &env,
+            &e,
             &target,
             &fn_name,
             &data,
@@ -123,10 +124,10 @@ impl TimeLockController {
      *
      * - the caller must have the 'canceller' role.
      */
-    pub fn cancel(env: Env, canceller: Address, operation_id: BytesN<32>) {
-        Self::_role_check(&env, &canceller, RoleLabel::Canceller);
+    pub fn cancel(e: Env, canceller: Address, operation_id: BytesN<32>) {
+        Self::_role_check(&e, &canceller, RoleLabel::Canceller);
 
-        time_lock::cancel(&env, &operation_id)
+        time_lock::cancel(&e, &operation_id)
     }
 
     /*
@@ -137,15 +138,15 @@ impl TimeLockController {
      * Requirements:
      *
      * - if the timelock is self-managed, caller can direct the timelock to update the min delay. In this case,
-     * the timelock will check that the caller is the admin. If the timelock is not self-managed, the caller must
+     * the timelock will check that the caller is the owner. If the timelock is not self-managed, the caller must
      * first schedule an operation where the timelock is the target. then execute the operation.
      */
-    pub fn update_min_delay(env: Env, delay: u64) {
-        if !time_lock::is_self_managed(&env) {
-            panic_with_error!(env, TimeLockError::NotPermitted);
+    pub fn update_min_delay(e: Env, delay: u64) {
+        if !time_lock::is_self_managed(&e) {
+            panic_with_error!(e, TimeLockError::NotPermitted);
         }
-        Self::_admin_check(&env);
-        time_lock::update_min_delay(&env, delay);
+        owner::only_owner(&e);
+        time_lock::update_min_delay(&e, delay);
     }
 
     /*
@@ -154,15 +155,15 @@ impl TimeLockController {
      * Requirements:
      *
      * - if the timelock is self-managed, caller can direct the timelock to grant a role. In this case,
-     * the timelock will check that the caller is the admin. If the timelock is not self-managed, the caller must
+     * the timelock will check that the caller is the owner. If the timelock is not self-managed, the caller must
      * first schedule an operation where the timelock is the target. then execute the operation.
      */
-    pub fn grant_role(env: Env, account: Address, role: RoleLabel) -> bool {
-        if !time_lock::is_self_managed(&env) {
-            panic_with_error!(env, TimeLockError::NotPermitted);
+    pub fn grant_role(e: Env, account: Address, role: RoleLabel) -> bool {
+        if !time_lock::is_self_managed(&e) {
+            panic_with_error!(e, TimeLockError::NotPermitted);
         }
-        Self::_admin_check(&env);
-        role_base::grant_role(&env, &account, &role)
+        owner::only_owner(&e);
+        role_base::grant_role(&e, &account, &role)
     }
 
     /*
@@ -171,57 +172,47 @@ impl TimeLockController {
      * Requirements:
      *
      * - if the timelock is self-managed, caller can direct the timelock to revoke a role. In this case,
-     * the timelock will check that the caller is the admin. If the timelock is not self-managed, the caller must
+     * the timelock will check that the caller is the owner. If the timelock is not self-managed, the caller must
      * first schedule an operation where the timelock is the target. then execute the operation.
      */
-    pub fn revoke_role(env: Env, account: Address, role: RoleLabel) -> bool {
-        if !time_lock::is_self_managed(&env) {
-            panic_with_error!(env, TimeLockError::NotPermitted);
+    pub fn revoke_role(e: Env, account: Address, role: RoleLabel) -> bool {
+        if !time_lock::is_self_managed(&e) {
+            panic_with_error!(e, TimeLockError::NotPermitted);
         }
-        Self::_admin_check(&env);
-        role_base::revoke_role(&env, &account, &role)
+        owner::only_owner(&e);
+        role_base::revoke_role(&e, &account, &role)
     }
 
     /*
-     * Reset the admin account.
+     * Reset the owner account.
      *
      * Requirements:
      *
-     * - if the timelock is self-managed, caller can direct the timelock to reset the admin. In this case,
-     * the timelock will check that the caller is the admin. If the timelock is not self-managed, the caller must
+     * - if the timelock is self-managed, caller can direct the timelock to reset the owner. In this case,
+     * the timelock will check that the caller is the owner. If the timelock is not self-managed, the caller must
      * first schedule an operation where the timelock is the target. then execute the operation.
      */
-    pub fn update_admin(env: Env, admin: Address) {
-        if !time_lock::is_self_managed(&env) {
-            panic_with_error!(env, TimeLockError::NotPermitted);
+    pub fn update_owner(e: Env, owner: Address) {
+        if !time_lock::is_self_managed(&e) {
+            panic_with_error!(e, TimeLockError::NotPermitted);
         }
-        Self::_admin_check(&env);
-        role_base::set_admin(&env, &admin)
+        owner::only_owner(&e);
+        owner::set_owner(&e, &owner)
     }
 
     /*
      * Returns the timestamp at which an operation becomes ready (0 for
      * unset operations, 1 for done operations).
      */
-    pub fn get_schedule_lock_time(env: &Env, operation_id: BytesN<32>) -> u64 {
-        time_lock::get_schedule_lock_time(&env, &operation_id)
+    pub fn get_schedule_lock_time(e: &Env, operation_id: BytesN<32>) -> u64 {
+        time_lock::get_schedule_lock_time(&e, &operation_id)
     }
 
     /*
      * Returns `true` if `account` has been granted `role`.
      */
-    pub fn has_role(env: &Env, account: Address, role: RoleLabel) -> bool {
-        role_base::has_role(&env, &account, &role)
-    }
-
-    fn _admin_check(e: &Env) {
-        let admin = role_base::read_admin(e);
-        match admin {
-            Some(admin) => {
-                admin.require_auth();
-            }
-            None => panic_with_error!(e, TimeLockError::NotPermitted),
-        }
+    pub fn has_role(e: &Env, account: Address, role: RoleLabel) -> bool {
+        role_base::has_role(&e, &account, &role)
     }
 
     fn _role_check(e: &Env, account: &Address, role: RoleLabel) {
@@ -236,14 +227,14 @@ impl TimeLockController {
 #[cfg(any(test, feature = "testutils"))]
 #[contractimpl]
 impl TimeLockController {
-    pub fn get_min_delay(env: &Env) -> u64 {
-        env.storage()
+    pub fn get_min_delay(e: &Env) -> u64 {
+        e.storage()
             .instance()
             .get(&DataKey::MinDelay)
             .unwrap_or(0)
     }
 
-    pub fn is_admin(env: &Env, account: Address) -> bool {
-        role_base::read_admin(env).map_or(false, |admin| admin == account)
+    pub fn is_owner(e: &Env, account: Address) -> bool {
+        owner::get_owner(e).map_or(false, |owner| owner == account)
     }
 }

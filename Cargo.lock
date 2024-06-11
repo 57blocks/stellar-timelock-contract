@@ -700,6 +700,13 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3fdb12b2476b595f9358c5161aa467c2438859caa136dec86c26fdd2efe17b92"
 
 [[package]]
+name = "owner"
+version = "0.1.0"
+dependencies = [
+ "soroban-sdk",
+]
+
+[[package]]
 name = "paste"
 version = "1.0.15"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1234,6 +1241,7 @@ checksum = "ef927ca75afb808a4d64dd374f00a2adf8d0fcff8e7b184af886c3c87ec4a3f3"
 name = "time-lock"
 version = "0.1.0"
 dependencies = [
+ "owner",
  "soroban-sdk",
 ]
 
@@ -1241,6 +1249,7 @@ dependencies = [
 name = "time-lock-example-contract"
 version = "0.1.0"
 dependencies = [
+ "owner",
  "soroban-sdk",
 ]
 

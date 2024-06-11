@@ -8,6 +8,7 @@ use core::primitive::u64;
 
 use crate::role_base;
 use crate::role_base::RoleLabel;
+use owner::owner;
 
 const DONE_TIMESTAMP: u64 = 1;
 const MAX_ACCOUNTS_NUM: u32 = 10;
@@ -74,10 +75,10 @@ pub(crate) fn initialize(
     min_delay: u64,
     proposers: &Vec<Address>,
     executors: &Vec<Address>,
-    admin: &Address,
+    owner: &Address,
     self_managed: bool,
 ) {
-    if role_base::has_admin(e) {
+    if owner::has_owner(e) {
         panic_with_error!(e, TimeLockError::AlreadyInitialized);
     }
 
@@ -97,7 +98,7 @@ pub(crate) fn initialize(
 
     _set_self_managed(e, self_managed);
 
-    role_base::set_admin(e, admin);
+    owner::set_owner(e, owner);
 
     for proposer in proposers.iter() {
         role_base::grant_role(e, &proposer, &RoleLabel::Proposer);
@@ -291,8 +292,8 @@ fn _exec_native(e: &Env, fn_name: &Symbol, data: &Vec<Val>) {
         _update_role(e, data, true);
     } else if fn_name == Symbol::new(e, "revoke_role") {
         _update_role(e, data, false);
-    } else if fn_name == Symbol::new(e, "update_admin") {
-        _update_admin(e, data);
+    } else if fn_name == Symbol::new(e, "update_owner") {
+        _update_owner(e, data);
     } else {
         panic_with_error!(e, TimeLockError::InvalidParams);
     }
@@ -368,12 +369,12 @@ fn _update_role(e: &Env, data: &Vec<Val>, is_grand: bool) {
     }
 }
 
-fn _update_admin(e: &Env, data: &Vec<Val>) {
-    let admin = data.get(0);
-    if let Some(admin) = admin {
-        let p = Address::try_from_val(e, &admin);
-        if let Ok(admin) = p {
-            role_base::set_admin(e, &admin);
+fn _update_owner(e: &Env, data: &Vec<Val>) {
+    let owner = data.get(0);
+    if let Some(owner) = owner {
+        let p = Address::try_from_val(e, &owner);
+        if let Ok(owner) = p {
+            owner::set_owner(e, &owner);
         } else {
             panic_with_error!(e, TimeLockError::InvalidParams);
         }
