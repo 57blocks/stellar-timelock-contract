@@ -123,7 +123,7 @@ pub(crate) fn schedule(
         panic_with_error!(e, TimeLockError::InvalidParams);
     }
 
-    let operation_id = _hash_call(e, &target, &fn_name, &data, &salt, &predecessor);
+    let operation_id = _hash_call(e, target, fn_name, data, salt, predecessor);
     _add_operation(e, &operation_id, delay);
 
     let actual_predecessor = match predecessor {
@@ -156,13 +156,13 @@ pub(crate) fn execute(
     predecessor: &Option<BytesN<32>>,
     is_native: bool,
 ) {
-    let operation_id = _hash_call(e, &target, &fn_name, &data, &salt, &predecessor);
+    let operation_id = _hash_call(e, target, fn_name, data, salt, predecessor);
     _execute_check(e, &operation_id, predecessor);
 
     if is_native {
-        _exec_native(e, &fn_name, &data);
+        _exec_native(e, fn_name, data);
     } else {
-        _exec_external(e, &target, &fn_name, &data);
+        _exec_external(e, target, fn_name, data);
     }
 
     e.storage()
@@ -183,7 +183,7 @@ pub(crate) fn execute(
 
 pub(crate) fn cancel(e: &Env, operation_id: &BytesN<32>) {
     let ledger_time = e.ledger().timestamp();
-    let lock_time = get_schedule_lock_time(e, &operation_id);
+    let lock_time = get_schedule_lock_time(e, operation_id);
     let state = _get_operation_state(ledger_time, lock_time);
     if state == OperationState::Ready || state == OperationState::Waiting {
         e.storage()
