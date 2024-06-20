@@ -52,7 +52,6 @@ pub enum TimeLockError {
 #[contracttype]
 pub struct CallExecutedEvent {
     pub opt_id: BytesN<32>,
-    pub index: u32,
     pub target: Address,
     pub fn_name: Symbol,
     pub data: Vec<Val>,
@@ -62,7 +61,6 @@ pub struct CallExecutedEvent {
 #[contracttype]
 pub struct CallScheduledEvent {
     pub opt_id: BytesN<32>,
-    pub index: u32,
     pub target: Address,
     pub fn_name: Symbol,
     pub data: Vec<Val>,
@@ -135,7 +133,6 @@ pub(crate) fn schedule(
         (Symbol::new(e, "CallScheduled"),),
         CallScheduledEvent {
             opt_id: operation_id.clone(),
-            index: 0,
             target: target.clone(),
             fn_name: fn_name.clone(),
             data: data.clone(),
@@ -173,7 +170,6 @@ pub(crate) fn execute(
         (Symbol::new(e, "CallExecuted"),),
         CallExecutedEvent {
             opt_id: operation_id,
-            index: 0,
             target: target.clone(),
             fn_name: fn_name.clone(),
             data: data.clone(),

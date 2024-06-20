@@ -74,7 +74,7 @@ impl TimeLockController {
         if target == e.current_contract_address() {
             owner::only_owner(&e);
         } else {
-            Self::_role_check(&e, &proposer, RoleLabel::Proposer);
+            Self::_role_check(&e, &proposer, &RoleLabel::Proposer);
         }
 
         time_lock::schedule(&e, &target, &fn_name, &data, &salt, &predecessor, delay)
@@ -104,7 +104,7 @@ impl TimeLockController {
             owner::only_owner(&e);
             is_native = true;
         } else {
-            Self::_role_check(&e, &executor, RoleLabel::Executor);
+            Self::_role_check(&e, &executor, &RoleLabel::Executor);
         }
         time_lock::execute(
             &e,
@@ -125,7 +125,7 @@ impl TimeLockController {
      * - the caller must have the 'canceller' role.
      */
     pub fn cancel(e: Env, canceller: Address, operation_id: BytesN<32>) {
-        Self::_role_check(&e, &canceller, RoleLabel::Canceller);
+        Self::_role_check(&e, &canceller, &RoleLabel::Canceller);
 
         time_lock::cancel(&e, &operation_id)
     }
@@ -204,19 +204,19 @@ impl TimeLockController {
      * Returns the timestamp at which an operation becomes ready (0 for
      * unset operations, 1 for done operations).
      */
-    pub fn get_schedule_lock_time(e: &Env, operation_id: BytesN<32>) -> u64 {
+    pub fn get_schedule_lock_time(e: Env, operation_id: BytesN<32>) -> u64 {
         time_lock::get_schedule_lock_time(&e, &operation_id)
     }
 
     /*
      * Returns `true` if `account` has been granted `role`.
      */
-    pub fn has_role(e: &Env, account: Address, role: RoleLabel) -> bool {
+    pub fn has_role(e: Env, account: Address, role: RoleLabel) -> bool {
         role_base::has_role(&e, &account, &role)
     }
 
-    fn _role_check(e: &Env, account: &Address, role: RoleLabel) {
-        if !role_base::has_role(e, account, &role) {
+    fn _role_check(e: &Env, account: &Address, role: &RoleLabel) {
+        if !role_base::has_role(e, account, role) {
             panic_with_error!(e, TimeLockError::NotPermitted);
         }
 
