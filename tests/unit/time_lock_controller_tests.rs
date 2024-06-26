@@ -343,7 +343,6 @@ mod schedule {
                     (Symbol::new(&env, "CallScheduled"),).into_val(&env),
                     CallScheduledEvent {
                         opt_id: operation_id.clone(),
-                        index: 0_u32,
                         target: target.clone(),
                         fn_name:fn_name.clone(),
                         data: data.clone(),
@@ -565,7 +564,6 @@ mod execute {
                     (Symbol::new(&env, "CallExecuted"),).into_val(&env),
                     CallExecutedEvent {
                         opt_id: operation_id.clone(),
-                        index: 0_u32,
                         target: target.clone(),
                         fn_name:fn_name.clone(),
                         data: data.clone(),
@@ -2027,7 +2025,7 @@ mod updata_self_with_time_lock {
         assert_eq!(
             client.try_execute(&owner, &target, &fn_name, &data, &salt, &None),
             Err(Ok(Error::from_contract_error(
-                TimeLockError::InvalidParams as u32
+                TimeLockError::InvalidFuncName as u32
             )))
         );
     }
