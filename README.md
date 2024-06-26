@@ -74,3 +74,7 @@ Step 4:
 If the scheduled operation doesn't need execution, the user has canceller role can cancel the operation by operationId.
 
 
+## Test Coverage
+![image](./coverage.png)
+
+you can run `cargo llvm-cov --open` get the coverage report.
