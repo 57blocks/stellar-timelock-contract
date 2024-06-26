@@ -46,6 +46,7 @@ pub enum TimeLockError {
     InvalidStatus = 8,
     NotPermitted = 9,
     ExecuteFailed = 10,
+    InvalidFuncName = 11,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -121,6 +122,11 @@ pub(crate) fn schedule(
         panic_with_error!(e, TimeLockError::InvalidParams);
     }
 
+    let min_delay = e.storage().instance().get(&DataKey::MinDelay).unwrap();
+    if delay < min_delay {
+        panic_with_error!(e, TimeLockError::InsufficientDelay);
+    }
+
     let operation_id = _hash_call(e, target, fn_name, data, salt, predecessor);
     _add_operation(e, &operation_id, delay);
 
@@ -154,7 +160,7 @@ pub(crate) fn execute(
     is_native: bool,
 ) {
     let operation_id = _hash_call(e, target, fn_name, data, salt, predecessor);
-    _execute_check(e, &operation_id, predecessor);
+    _check_execute(e, &operation_id, predecessor);
 
     if is_native {
         _exec_native(e, fn_name, data);
@@ -178,9 +184,7 @@ pub(crate) fn execute(
 }
 
 pub(crate) fn cancel(e: &Env, operation_id: &BytesN<32>) {
-    let ledger_time = e.ledger().timestamp();
-    let lock_time = get_schedule_lock_time(e, operation_id);
-    let state = _get_operation_state(ledger_time, lock_time);
+    let state = _get_operation_state(e, operation_id);
     if state == OperationState::Ready || state == OperationState::Waiting {
         e.storage()
             .persistent()
@@ -225,7 +229,9 @@ fn _set_self_managed(e: &Env, self_managed: bool) {
         .publish((Symbol::new(e, "SelfManaged"),), self_managed);
 }
 
-fn _get_operation_state(ledger_time: u64, lock_time: u64) -> OperationState {
+fn _get_operation_state(e: &Env, operation_id: &BytesN<32>) -> OperationState {
+    let ledger_time = e.ledger().timestamp();
+    let lock_time = get_schedule_lock_time(e, operation_id);
     if lock_time == 0 {
         OperationState::Unset
     } else if lock_time == DONE_TIMESTAMP {
@@ -238,14 +244,9 @@ fn _get_operation_state(ledger_time: u64, lock_time: u64) -> OperationState {
 }
 
 fn _add_operation(e: &Env, operation_id: &BytesN<32>, delay: u64) {
-    let lock_time = get_schedule_lock_time(e, operation_id);
     let ledger_time = e.ledger().timestamp();
-    if _get_operation_state(ledger_time, lock_time) != OperationState::Unset {
+    if _get_operation_state(e, operation_id) != OperationState::Unset {
         panic_with_error!(e, TimeLockError::AlreadyExists);
-    }
-    let min_delay = e.storage().instance().get(&DataKey::MinDelay).unwrap();
-    if delay < min_delay {
-        panic_with_error!(e, TimeLockError::InsufficientDelay);
     }
 
     let time = ledger_time + delay;
@@ -254,16 +255,13 @@ fn _add_operation(e: &Env, operation_id: &BytesN<32>, delay: u64) {
         .set(&DataKey::Scheduler(operation_id.clone()), &time);
 }
 
-fn _execute_check(e: &Env, operation_id: &BytesN<32>, predecessor: &Option<BytesN<32>>) {
-    let ledger_time = e.ledger().timestamp();
-    let lock_time = get_schedule_lock_time(e, operation_id);
-    if _get_operation_state(ledger_time, lock_time) != OperationState::Ready {
+fn _check_execute(e: &Env, operation_id: &BytesN<32>, predecessor: &Option<BytesN<32>>) {
+    if _get_operation_state(e, operation_id) != OperationState::Ready {
         panic_with_error!(e, TimeLockError::TimeNotReady);
     }
 
     if let Some(predecessor) = predecessor {
-        let pre_lock_time = get_schedule_lock_time(e, predecessor);
-        if _get_operation_state(ledger_time, pre_lock_time) != OperationState::Executed {
+        if _get_operation_state(e, predecessor) != OperationState::Executed {
             panic_with_error!(e, TimeLockError::PredecessorNotDone);
         }
     }
@@ -291,7 +289,7 @@ fn _exec_native(e: &Env, fn_name: &Symbol, data: &Vec<Val>) {
     } else if fn_name == Symbol::new(e, "update_owner") {
         _update_owner(e, data);
     } else {
-        panic_with_error!(e, TimeLockError::InvalidParams);
+        panic_with_error!(e, TimeLockError::InvalidFuncName);
     }
 }
 

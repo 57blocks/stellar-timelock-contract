@@ -3,18 +3,60 @@
 ## Project Structure
 
 - /example
+
   client script to guide how to use time lock
 
 - /owner
+
   ownable library
 
 - /time_lock
+
   TimeLockController contract
 
 - /tests
+
   unit cases of time lock
 
-## Time Lock Workflow
+## Time Lock Functions
+
+- grant_role
+
+The owner of the timelock add proposer, executor, or canceller roles. If `self_managed` is false, invoking `grant-role` must go through the timelock process.
+
+- revoke_role
+
+The owner of the timelock revoke proposer, executor, or canceller roles. If `self_managed` is false, invoking `revoke-role` must go through timelock process.
+
+- update_owner
+
+The owner can transfer their rights to someone else. If `self_managed` is false, invoking `update_owner` must go through timelock process.
+
+- schedule
+
+Only users with the proposer role can call this function to schedule a smart contract invocation..
+
+- execute
+
+Only users with the executor role can call this function to execute a smart contract invocation.
+
+- cancel
+
+Only users with the canceller role can call this function to cancel a smart contract invocation.
+
+- update_min_delay
+
+The owner of the timelock can update the minimum delay for each scheduled operation. If `self_managed` is false, invoking `update_min_delay` must go through timelock process.
+
+- get_schedule_lock_time
+
+Get the timestamp at which an operation becomes ready. 0 for unset operation; 1 for done operation
+
+- has_role
+
+Verify whether a user holds a specific role.
+
+## Time Lock Example Usage Workflow
 ![image](./timelock-workflow.png)
 
 Let's briefly introduce the flow mentioned in the above diagram:
@@ -31,13 +73,8 @@ Once the locked time is over, the executor can invoke TimeLockController's execu
 Step 4:
 If the scheduled operation doesn't need execution, the user has canceller role can cancel the operation by operationId.
 
-## Time Lock Self Management
 
-- initialization: After deployment, the deployer must call the `initialize` function to set up the timelock. The timelock will only become operational after this initialization. Note that this function can be invoked only once..
+## Test Coverage
+![image](./coverage.png)
 
-- update min delay time: the owner of timelock can update the min delay of every schedule operation.
-
-- grant/revoke role: the owner of timelock can add/revoke the proposer/executor/canceller roles
-
-- update the owner: the owner can transfer his right another one
-
+you can run `cargo llvm-cov --open` get the coverage report.
