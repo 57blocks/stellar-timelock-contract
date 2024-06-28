@@ -1,0 +1,26 @@
+{
+  "schedule": {
+    "cpu_insns": 6264681,
+    "mem_bytes": 1896289,
+    "entry_reads": 3,
+    "entry_writes": 1,
+    "read_bytes": 12816,
+    "write_bytes": 140,
+    "events_and_return_bytes": 444,
+    "min_txn_bytes": 1100,
+    "max_entry_bytes": 128,
+    "max_key_bytes": 120
+  },
+  "execute": {
+    "cpu_insns": 9670290,
+    "mem_bytes": 3464474,
+    "entry_reads": 5,
+    "entry_writes": 2,
+    "read_bytes": 19292,
+    "write_bytes": 288,
+    "events_and_return_bytes": 484,
+    "min_txn_bytes": 1276,
+    "max_entry_bytes": 136,
+    "max_key_bytes": 120
+  }
+}

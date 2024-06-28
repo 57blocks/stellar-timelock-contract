@@ -78,3 +78,7 @@ If the scheduled operation doesn't need execution, the user has canceller role c
 ![image](./coverage.png)
 
 you can run `cargo llvm-cov --open` get the coverage report.
+
+## Token Mint Schedule & Execute Gas Usage
+
+[token mint gas report](./token-mint-gas.json)
