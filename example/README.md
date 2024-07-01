@@ -8,7 +8,7 @@ The example contract [token](https://github.com/stellar/soroban-examples/tree/v2
 
 In the token contract, there are two functions that only called by admin. We initialize the token contract by passing TimeLockController's instance as admin. So only the TimeLockController can invoke these two functions.
 
-`
+```
     pub fn mint(e: Env, to: Address, amount: i128) {
         check_nonnegative_amount(amount);
         let admin = read_administrator(&e);
@@ -34,23 +34,28 @@ In the token contract, there are two functions that only called by admin. We ini
         TokenUtils::new(&e).events().set_admin(admin, new_admin);
     }   
 
-`
+```
 
 ## Main File & Directory
 
 - /wasm
+
   store the token's optimized builded wasm file
 
 - /cli
+
   organize these files related soroban cli
 
 - /sdk
+
   organize these files related soroban js SDK
 
 - docker.sh
+
   docker command to run the steller local node
 
 - prepare.js
+
   script to deploy and initialize contract to local node
 
 ## Run Example Case
