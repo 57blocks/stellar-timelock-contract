@@ -82,3 +82,7 @@ you can run `cargo llvm-cov --open` get the coverage report.
 ## Token Mint Schedule & Execute Gas Usage
 
 [token mint gas report](./token-mint-gas.json)
+
+## Schedule Operation TTL
+
+The scheduled operation is saved in persistent storage. We recommend keeping the operation's waiting time shorter than the default minimum persistence lifetime. Minimum TTL is a network parameter. Refer to the [resource reference](https://developers.stellar.org/docs/reference/resource-limits-fees) to find the current values. If the operation is archived and hasn't been executed yet, it should first be restored before execution.
