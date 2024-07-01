@@ -9,7 +9,8 @@
   },
   "scripts": {
     "prepare": "node prepare.js",
-    "run-cli": "node ./cli/index.js"
+    "run-cli": "node ./cli/index.js",
+    "run-sdk": "node ./sdk/index.js"
   },
   "author": "",
   "license": "ISC",
