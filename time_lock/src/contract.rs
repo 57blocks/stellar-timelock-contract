@@ -142,6 +142,10 @@ impl TimeLockController {
      * first schedule an operation where the timelock is the target. then execute the operation.
      */
     pub fn update_min_delay(e: Env, delay: u64) {
+        if delay > time_lock::MAX_MIN_DELAY {
+            panic_with_error!(e, TimeLockError::DelayTooLong);
+        }
+
         if !time_lock::is_self_managed(&e) {
             panic_with_error!(e, TimeLockError::NotPermitted);
         }

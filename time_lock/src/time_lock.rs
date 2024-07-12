@@ -12,6 +12,7 @@ use owner::owner;
 
 const DONE_TIMESTAMP: u64 = 1;
 const MAX_ACCOUNTS_NUM: u32 = 10;
+pub const MAX_MIN_DELAY: u64 = 30 * 24 * 60 * 60; // 30 days
 
 #[derive(Clone)]
 #[contracttype]
@@ -47,6 +48,7 @@ pub enum TimeLockError {
     NotPermitted = 9,
     ExecuteFailed = 10,
     InvalidFuncName = 11,
+    DelayTooLong = 12,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -81,8 +83,8 @@ pub(crate) fn initialize(
         panic_with_error!(e, TimeLockError::AlreadyInitialized);
     }
 
-    if min_delay == 0 {
-        panic_with_error!(e, TimeLockError::InvalidParams);
+    if min_delay > MAX_MIN_DELAY {
+        panic_with_error!(e, TimeLockError::DelayTooLong);
     }
 
     if proposers.len() == 0 || executors.len() == 0 {

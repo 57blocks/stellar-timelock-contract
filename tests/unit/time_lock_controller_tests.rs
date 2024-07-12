@@ -137,16 +137,18 @@ mod initialize {
         let proposer = Address::generate(&env);
         let executor = Address::generate(&env);
 
+        let delay = 30 * 24 * 60 * 60 + 1;
+
         assert_eq!(
             client.try_initialize(
-                &0,
+                &delay,
                 &vec![&env, proposer.clone()],
                 &vec![&env, executor.clone()],
                 &Address::generate(&env),
                 &true
             ),
             Err(Ok(Error::from_contract_error(
-                TimeLockError::InvalidParams as u32
+                TimeLockError::DelayTooLong as u32
             )))
         );
 
@@ -1210,6 +1212,26 @@ mod update_min_delay {
             client.try_update_min_delay(&delay),
             Err(Ok(Error::from_contract_error(
                 TimeLockError::NotPermitted as u32
+            )))
+        );
+    }
+
+    #[test]
+    fn long_delay_should_panic() {
+        let Context {
+            env: _,
+            contract: _,
+            time_lock: client,
+            proposer: _,
+            executor: _,
+            owner: _,
+        } = setup(true);
+
+        let min_delay = 30 * 24 * 60 * 60 + 1;
+        assert_eq!(
+            client.try_update_min_delay(&min_delay),
+            Err(Ok(Error::from_contract_error(
+                TimeLockError::DelayTooLong as u32
             )))
         );
     }
