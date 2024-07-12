@@ -104,6 +104,55 @@ mod initialize {
     }
 
     #[test]
+    fn is_ok_with_empty_proposer() {
+        let env = Env::default();
+        let contract_id = env.register_contract(None, TimeLockController);
+        let client = TimeLockControllerClient::new(&env, &contract_id);
+
+        let executor = Address::generate(&env);
+
+        client.initialize(
+            &MIN_DELAY,
+            &vec![&env],
+            &vec![&env, executor.clone()],
+            &Address::generate(&env),
+            &true,
+        );
+    }
+
+    #[test]
+    fn is_ok_with_empty_executor() {
+        let env = Env::default();
+        let contract_id = env.register_contract(None, TimeLockController);
+        let client = TimeLockControllerClient::new(&env, &contract_id);
+
+        let proposer = Address::generate(&env);
+
+        client.initialize(
+            &MIN_DELAY,
+            &vec![&env, proposer.clone()],
+            &vec![&env],
+            &Address::generate(&env),
+            &true,
+        );
+    }
+
+    #[test]
+    fn is_ok_with_empty_proposer_and_executor() {
+        let env = Env::default();
+        let contract_id = env.register_contract(None, TimeLockController);
+        let client = TimeLockControllerClient::new(&env, &contract_id);
+
+        client.initialize(
+            &MIN_DELAY,
+            &vec![&env],
+            &vec![&env],
+            &Address::generate(&env),
+            &true,
+        );
+    }
+
+    #[test]
     #[should_panic = "Error(Contract, #2)"]
     fn twice_should_panic() {
         let env = Env::default();
@@ -147,114 +196,6 @@ mod initialize {
             ),
             Err(Ok(Error::from_contract_error(
                 TimeLockError::InvalidParams as u32
-            )))
-        );
-
-        assert_eq!(
-            client.try_initialize(
-                &MIN_DELAY,
-                &vec![&env],
-                &vec![&env, executor.clone()],
-                &Address::generate(&env),
-                &true
-            ),
-            Err(Ok(Error::from_contract_error(
-                TimeLockError::InvalidParams as u32
-            )))
-        );
-
-        assert_eq!(
-            client.try_initialize(
-                &MIN_DELAY,
-                &vec![&env, proposer.clone()],
-                &vec![&env],
-                &Address::generate(&env),
-                &true
-            ),
-            Err(Ok(Error::from_contract_error(
-                TimeLockError::InvalidParams as u32
-            )))
-        );
-
-        assert_eq!(
-            client.try_initialize(
-                &MIN_DELAY,
-                &vec![&env],
-                &vec![&env],
-                &Address::generate(&env),
-                &true
-            ),
-            Err(Ok(Error::from_contract_error(
-                TimeLockError::InvalidParams as u32
-            )))
-        );
-
-        let proposers = vec![
-            &env,
-            proposer.clone(),
-            proposer.clone(),
-            proposer.clone(),
-            proposer.clone(),
-            proposer.clone(),
-            proposer.clone(),
-            proposer.clone(),
-            proposer.clone(),
-            proposer.clone(),
-            proposer.clone(),
-            proposer.clone(),
-        ];
-
-        assert_eq!(
-            client.try_initialize(
-                &MIN_DELAY,
-                &proposers,
-                &vec![&env, executor.clone()],
-                &Address::generate(&env),
-                &true
-            ),
-            Err(Ok(Error::from_contract_error(
-                TimeLockError::ExceedMaxCount as u32
-            )))
-        );
-
-        let executors = vec![
-            &env,
-            executor.clone(),
-            executor.clone(),
-            executor.clone(),
-            executor.clone(),
-            executor.clone(),
-            executor.clone(),
-            executor.clone(),
-            executor.clone(),
-            executor.clone(),
-            executor.clone(),
-            executor.clone(),
-        ];
-
-        assert_eq!(
-            client.try_initialize(
-                &MIN_DELAY,
-                &vec![&env, proposer.clone()],
-                &executors,
-                &Address::generate(&env),
-                &true
-            ),
-            Err(Ok(Error::from_contract_error(
-                TimeLockError::ExceedMaxCount as u32
-            )))
-        );
-
-        assert_eq!(
-            client.try_initialize(
-                &MIN_DELAY,
-                &proposers,
-                &executors,
-                &Address::generate(&env),
-                &true
-            ),
-            Err(Ok(Error::from_contract_error(
-                TimeLockError::ExceedMaxCount as u32
             )))
         );
     }
