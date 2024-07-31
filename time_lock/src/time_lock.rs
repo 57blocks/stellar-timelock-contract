@@ -11,7 +11,6 @@ use crate::role_base::RoleLabel;
 use owner::owner;
 
 const DONE_TIMESTAMP: u64 = 1;
-const MAX_ACCOUNTS_NUM: u32 = 10;
 pub const MAX_MIN_DELAY: u64 = 30 * 24 * 60 * 60; // 30 days
 
 #[derive(Clone)]
@@ -43,7 +42,6 @@ pub enum TimeLockError {
     InsufficientDelay = 4,
     TimeNotReady = 5,
     PredecessorNotDone = 6,
-    ExceedMaxCount = 7,
     InvalidStatus = 8,
     NotPermitted = 9,
     ExecuteFailed = 10,
@@ -85,14 +83,6 @@ pub(crate) fn initialize(
 
     if min_delay > MAX_MIN_DELAY {
         panic_with_error!(e, TimeLockError::DelayTooLong);
-    }
-
-    if proposers.len() == 0 || executors.len() == 0 {
-        panic_with_error!(e, TimeLockError::InvalidParams);
-    }
-
-    if proposers.len() > MAX_ACCOUNTS_NUM || executors.len() > MAX_ACCOUNTS_NUM {
-        panic_with_error!(e, TimeLockError::ExceedMaxCount);
     }
 
     update_min_delay(e, min_delay);
