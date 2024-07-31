@@ -186,16 +186,18 @@ mod initialize {
         let proposer = Address::generate(&env);
         let executor = Address::generate(&env);
 
+        let delay = 30 * 24 * 60 * 60 + 1;
+
         assert_eq!(
             client.try_initialize(
-                &0,
+                &delay,
                 &vec![&env, proposer.clone()],
                 &vec![&env, executor.clone()],
                 &Address::generate(&env),
                 &true
             ),
             Err(Ok(Error::from_contract_error(
-                TimeLockError::InvalidParams as u32
+                TimeLockError::DelayTooLong as u32
             )))
         );
     }
@@ -1154,6 +1156,26 @@ mod update_min_delay {
             )))
         );
     }
+
+    #[test]
+    fn long_delay_should_panic() {
+        let Context {
+            env: _,
+            contract: _,
+            time_lock: client,
+            proposer: _,
+            executor: _,
+            owner: _,
+        } = setup(true);
+
+        let min_delay = 30 * 24 * 60 * 60 + 1;
+        assert_eq!(
+            client.try_update_min_delay(&min_delay),
+            Err(Ok(Error::from_contract_error(
+                TimeLockError::DelayTooLong as u32
+            )))
+        );
+    }
 }
 
 mod grant_role {
@@ -1959,12 +1981,8 @@ mod updata_self_with_time_lock {
         let salt = BytesN::random(&env);
         let delay: u64 = MIN_DELAY + 10;
 
-        client.schedule(&owner, &target, &fn_name, &data, &salt, &None, &delay);
-
-        set_env_timestamp(&env, current_timestamp());
-
         assert_eq!(
-            client.try_execute(&owner, &target, &fn_name, &data, &salt, &None),
+            client.try_schedule(&owner, &target, &fn_name, &data, &salt, &None, &delay),
             Err(Ok(Error::from_contract_error(
                 TimeLockError::InvalidFuncName as u32
             )))

@@ -10,9 +10,9 @@
  */
 use crate::role_base;
 use crate::role_base::RoleLabel;
-use owner::owner;
 use crate::time_lock;
 use crate::time_lock::{DataKey, TimeLockError};
+use owner::owner;
 
 use soroban_sdk::{
     contract, contractimpl, panic_with_error, Address, BytesN, Env, Symbol, Val, Vec,
@@ -41,14 +41,7 @@ impl TimeLockController {
         owner: Address,
         self_managed: bool,
     ) {
-        time_lock::initialize(
-            &e,
-            min_delay,
-            &proposers,
-            &executors,
-            &owner,
-            self_managed,
-        )
+        time_lock::initialize(&e, min_delay, &proposers, &executors, &owner, self_managed)
     }
 
     /*
@@ -72,6 +65,7 @@ impl TimeLockController {
         delay: u64,
     ) -> BytesN<32> {
         if target == e.current_contract_address() {
+            Self::_check_fn_name(&e, &fn_name);
             owner::only_owner(&e);
         } else {
             Self::_check_role(&e, &proposer, &RoleLabel::Proposer);
@@ -106,15 +100,7 @@ impl TimeLockController {
         } else {
             Self::_check_role(&e, &executor, &RoleLabel::Executor);
         }
-        time_lock::execute(
-            &e,
-            &target,
-            &fn_name,
-            &data,
-            &salt,
-            &predecessor,
-            is_native,
-        );
+        time_lock::execute(&e, &target, &fn_name, &data, &salt, &predecessor, is_native);
     }
 
     /*
@@ -142,6 +128,10 @@ impl TimeLockController {
      * first schedule an operation where the timelock is the target. then execute the operation.
      */
     pub fn update_min_delay(e: Env, delay: u64) {
+        if delay > time_lock::MAX_MIN_DELAY {
+            panic_with_error!(e, TimeLockError::DelayTooLong);
+        }
+
         if !time_lock::is_self_managed(&e) {
             panic_with_error!(e, TimeLockError::NotPermitted);
         }
@@ -222,16 +212,28 @@ impl TimeLockController {
 
         account.require_auth();
     }
+
+    fn _check_fn_name(e: &Env, fn_name: &Symbol) {
+        let fn_name = fn_name.clone();
+        if fn_name == Symbol::new(e, "update_min_delay") {
+            return;
+        } else if fn_name == Symbol::new(e, "grant_role") {
+            return;
+        } else if fn_name == Symbol::new(e, "revoke_role") {
+            return;
+        } else if fn_name == Symbol::new(e, "update_owner") {
+            return;
+        } else {
+            panic_with_error!(e, TimeLockError::InvalidFuncName);
+        }
+    }
 }
 
 #[cfg(any(test, feature = "testutils"))]
 #[contractimpl]
 impl TimeLockController {
     pub fn get_min_delay(e: &Env) -> u64 {
-        e.storage()
-            .instance()
-            .get(&DataKey::MinDelay)
-            .unwrap_or(0)
+        e.storage().instance().get(&DataKey::MinDelay).unwrap_or(0)
     }
 
     pub fn is_owner(e: &Env, account: Address) -> bool {
