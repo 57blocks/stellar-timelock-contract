@@ -2040,12 +2040,8 @@ mod updata_self_with_time_lock {
         let salt = BytesN::random(&env);
         let delay: u64 = MIN_DELAY + 10;
 
-        client.schedule(&owner, &target, &fn_name, &data, &salt, &None, &delay);
-
-        set_env_timestamp(&env, current_timestamp());
-
         assert_eq!(
-            client.try_execute(&owner, &target, &fn_name, &data, &salt, &None),
+            client.try_schedule(&owner, &target, &fn_name, &data, &salt, &None, &delay),
             Err(Ok(Error::from_contract_error(
                 TimeLockError::InvalidFuncName as u32
             )))
