@@ -19,11 +19,8 @@ async function getBalance(pubKey) {
   return balance;
 }
 
-async function scheduleOperation(target, fnName, data, salt, predecessor, timeLockOwner = users.timelockOwner) {
+async function scheduleOperation(target, fnName, data, salt, predecessor) {
   let source = users.proposer;
-  if (target == timeLockContractId) {
-    source = timeLockOwner;
-  }
   let proposer = `${source}_pubkey`;
   let command = `soroban contract invoke --id ${timeLockContractId} --source ${source} --network ${
     networks.name
@@ -37,11 +34,8 @@ async function scheduleOperation(target, fnName, data, salt, predecessor, timeLo
   return mintOperationId;
 }
 
-async function executeOperation(target, fnName, data, salt, predecessor, timeLockOwner = users.timelockOwner) {
+async function executeOperation(target, fnName, data, salt, predecessor) {
   let source = users.executor;
-  if (target == timeLockContractId) {
-    source = timeLockOwner;
-  }
   let executor = `${source}_pubkey`;
   const command = `soroban contract invoke --id ${timeLockContractId} --source ${source} --network ${networks.name} -- execute --executor ${process.env[executor]} --target ${target} --fn_name ${fnName} --data '${data}' --salt ${salt} --predecessor ${predecessor}`
   await cmd(

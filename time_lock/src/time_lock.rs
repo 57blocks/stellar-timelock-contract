@@ -74,8 +74,7 @@ pub(crate) fn initialize(
     min_delay: u64,
     proposers: &Vec<Address>,
     executors: &Vec<Address>,
-    owner: &Address,
-    self_managed: bool,
+    owner:  &Option<Address>,
 ) {
     if owner::has_owner(e) {
         panic_with_error!(e, TimeLockError::AlreadyInitialized);
@@ -87,9 +86,9 @@ pub(crate) fn initialize(
 
     update_min_delay(e, min_delay);
 
-    _set_self_managed(e, self_managed);
-
-    owner::set_owner(e, owner);
+    if let Some(owner) = owner {
+        owner::set_owner(e, owner);
+    }
 
     for proposer in proposers.iter() {
         role_base::grant_role(e, &proposer, &RoleLabel::Proposer);
@@ -204,21 +203,6 @@ pub(crate) fn get_schedule_lock_time(e: &Env, operation_id: &BytesN<32>) -> u64 
     } else {
         0_u64
     }
-}
-
-pub(crate) fn is_self_managed(e: &Env) -> bool {
-    e.storage()
-        .instance()
-        .get(&DataKey::SelfManaged)
-        .unwrap_or(false)
-}
-
-fn _set_self_managed(e: &Env, self_managed: bool) {
-    e.storage()
-        .instance()
-        .set(&DataKey::SelfManaged, &self_managed);
-    e.events()
-        .publish((Symbol::new(e, "SelfManaged"),), self_managed);
 }
 
 fn _get_operation_state(e: &Env, operation_id: &BytesN<32>) -> OperationState {

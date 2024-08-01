@@ -29,19 +29,17 @@ impl TimeLockController {
      * - `min_delay`: initial minimum delay in seconds for operations
      * - `proposers`: accounts to be granted proposer and canceller roles
      * - `executors`: accounts to be granted executor role
-     * - `owner`: account to be granted owner role
-     * - `self_managed`: if true, the owner can run management tasks directly; if false, these tasks
-     *  will have to go through the timelock process.
+     * - `owner`: account to be granted owner role, the owner can run management tasks directly,
+     *  if None the contract will only be self managed.
      */
     pub fn initialize(
         e: Env,
         min_delay: u64,
         proposers: Vec<Address>,
         executors: Vec<Address>,
-        owner: Address,
-        self_managed: bool,
+        owner: Option<Address>,
     ) {
-        time_lock::initialize(&e, min_delay, &proposers, &executors, &owner, self_managed)
+        time_lock::initialize(&e, min_delay, &proposers, &executors, &owner)
     }
 
     /*
@@ -66,10 +64,9 @@ impl TimeLockController {
     ) -> BytesN<32> {
         if target == e.current_contract_address() {
             Self::_check_fn_name(&e, &fn_name);
-            owner::only_owner(&e);
-        } else {
-            Self::_check_role(&e, &proposer, &RoleLabel::Proposer);
         }
+
+        Self::_check_role(&e, &proposer, &RoleLabel::Proposer);
 
         time_lock::schedule(&e, &target, &fn_name, &data, &salt, &predecessor, delay)
     }
@@ -95,11 +92,11 @@ impl TimeLockController {
     ) {
         let mut is_native = false;
         if target == e.current_contract_address() {
-            owner::only_owner(&e);
             is_native = true;
-        } else {
-            Self::_check_role(&e, &executor, &RoleLabel::Executor);
-        }
+        } 
+
+        Self::_check_role(&e, &executor, &RoleLabel::Executor);
+        
         time_lock::execute(&e, &target, &fn_name, &data, &salt, &predecessor, is_native);
     }
 
@@ -132,9 +129,6 @@ impl TimeLockController {
             panic_with_error!(e, TimeLockError::DelayTooLong);
         }
 
-        if !time_lock::is_self_managed(&e) {
-            panic_with_error!(e, TimeLockError::NotPermitted);
-        }
         owner::only_owner(&e);
         time_lock::update_min_delay(&e, delay);
     }
@@ -149,9 +143,6 @@ impl TimeLockController {
      * first schedule an operation where the timelock is the target. then execute the operation.
      */
     pub fn grant_role(e: Env, account: Address, role: RoleLabel) -> bool {
-        if !time_lock::is_self_managed(&e) {
-            panic_with_error!(e, TimeLockError::NotPermitted);
-        }
         owner::only_owner(&e);
         role_base::grant_role(&e, &account, &role)
     }
@@ -166,9 +157,6 @@ impl TimeLockController {
      * first schedule an operation where the timelock is the target. then execute the operation.
      */
     pub fn revoke_role(e: Env, account: Address, role: RoleLabel) -> bool {
-        if !time_lock::is_self_managed(&e) {
-            panic_with_error!(e, TimeLockError::NotPermitted);
-        }
         owner::only_owner(&e);
         role_base::revoke_role(&e, &account, &role)
     }
@@ -183,9 +171,6 @@ impl TimeLockController {
      * first schedule an operation where the timelock is the target. then execute the operation.
      */
     pub fn update_owner(e: Env, owner: Address) {
-        if !time_lock::is_self_managed(&e) {
-            panic_with_error!(e, TimeLockError::NotPermitted);
-        }
         owner::only_owner(&e);
         owner::set_owner(&e, &owner)
     }

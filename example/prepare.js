@@ -39,12 +39,12 @@ const horizon = new Horizon.Server(horizonUrl, {allowHttp: true});
     console.log("initialized mock_token");
 
     await cmd(
-        `soroban contract invoke --id ${timelockContractId} --network ${networks.name} --source ${deployer} -- initialize --min_delay ${minDelay} --proposers '{"vec":[{"address":"${proposerPubKey}"}]}' --executors '{"vec":[{"address":"${executorPubKey}"}]}' --owner ${timelockOwnerPubKey} --self_managed false`
+        `soroban contract invoke --id ${timelockContractId} --network ${networks.name} --source ${deployer} -- initialize --min_delay ${minDelay} --proposers '{"vec":[{"address":"${proposerPubKey}"}]}' --executors '{"vec":[{"address":"${executorPubKey}"}]}' --owner ${null}`
     );
     console.log("initialized time_lock");
 
     await cmd(
-        `soroban contract invoke --id ${timelockContractId2} --network ${networks.name} --source ${deployer} -- initialize --min_delay ${minDelay} --proposers '{"vec":[{"address":"${proposerPubKey}"}]}' --executors '{"vec":[{"address":"${executorPubKey}"}]}' --owner ${timelockOwnerPubKey} --self_managed true`
+        `soroban contract invoke --id ${timelockContractId2} --network ${networks.name} --source ${deployer} -- initialize --min_delay ${minDelay} --proposers '{"vec":[{"address":"${proposerPubKey}"}]}' --executors '{"vec":[{"address":"${executorPubKey}"}]}' --owner ${timelockOwnerPubKey}`
     );
     console.log("initialized time_lock_self_managed");
 
