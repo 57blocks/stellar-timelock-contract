@@ -233,12 +233,11 @@ async function update_timelock_owner() {
         data2,
         salt2,
         predecessor,
-        users.deployer
     );
     await getOperationTimeLock(operationId2);
 
     await sleep(25000);
-    await executeOperation(target, fnName, data2, salt2, predecessor,users.deployer);
+    await executeOperation(target, fnName, data2, salt2, predecessor);
 
     await getOperationTimeLock(operationId2);
 }

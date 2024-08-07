@@ -15,9 +15,9 @@ const {
 
 async function scheduleAndExecuteUpdateOwner(newOwner, newOwnerSecret) {
   let timeLockContractId = process.env.timelock_contract_id;
-  let timeLockOwnerLabel = users.timelockOwner;
-  let timeLockOwnerSecret = process.env[`${timeLockOwnerLabel}_secret`];
-  let proposer = process.env[`${timeLockOwnerLabel}_pubkey`];
+  let proposerLabel = users.proposer;
+  let proposerSecret = process.env[`${proposerLabel}_secret`];
+  let proposer = process.env[`${proposerLabel}_pubkey`];
   let target = process.env.timelock_contract_id;
   let fnName = "update_owner";
   let data = [nativeToScVal(newOwner, { type: "address" })];
@@ -39,23 +39,31 @@ async function scheduleAndExecuteUpdateOwner(newOwner, newOwnerSecret) {
     nativeToScVal(delay, { type: "u64" }),
   ];
 
-  const keyPair = Keypair.fromSecret(timeLockOwnerSecret);
+  const keyPair = Keypair.fromSecret(proposerSecret);
   const {result} = await scheduleOperation(
     keyPair,
     timeLockContractId,
     scheduleParams
   );
+
+  let executor = process.env[`${users.executor}_pubkey`];
+  let executorSecret = process.env[`${users.executor}_secret`];
+  let executorKeyPair = Keypair.fromSecret(executorSecret);
   if (result) {
     await sleep(20000);
-    const executeParams = scheduleParams.slice(0, scheduleParams.length - 1);
-    await executeOperation(keyPair, timeLockContractId, executeParams);
+    const executeParams = scheduleParams.slice(1, scheduleParams.length - 1);
+    executeParams.unshift(
+      nativeToScVal(Address.fromString(executor), { type: "address" })
+    );
+    await executeOperation(executorKeyPair, timeLockContractId, executeParams);
   }
 
   // rollback to the original owner
+    let timeLockOwnerLabel = users.timelockOwner;
     let oldOwner = process.env[`${timeLockOwnerLabel}_pubkey`];
     data = [nativeToScVal(oldOwner, { type: "address" })];
     const rollbackScheduleParams = [
-      nativeToScVal(Address.fromString(newOwner), { type: "address" }),
+      nativeToScVal(Address.fromString(proposer), { type: "address" }),
       nativeToScVal(Address.fromString(target), { type: "address" }),
       nativeToScVal(fnName, { type: "symbol" }),
       nativeToScVal(nativeToScVal(data)),
@@ -64,17 +72,19 @@ async function scheduleAndExecuteUpdateOwner(newOwner, newOwnerSecret) {
       nativeToScVal(delay, { type: "u64" }),
     ];
     
-    const newKeyPair = Keypair.fromSecret(newOwnerSecret);
     const {result: rollbackResult} = await scheduleOperation(
-      newKeyPair,
+      keyPair,
       timeLockContractId,
       rollbackScheduleParams
     );
 
     if (rollbackResult) {
       await sleep(20000);
-      const rollbackExecuteParams = rollbackScheduleParams.slice(0, rollbackScheduleParams.length - 1);
-      await executeOperation(newKeyPair, timeLockContractId, rollbackExecuteParams);
+      const rollbackExecuteParams = rollbackScheduleParams.slice(1, rollbackScheduleParams.length - 1);
+      rollbackExecuteParams.unshift(
+      nativeToScVal(Address.fromString(executor), { type: "address" })
+    );
+      await executeOperation(executorKeyPair, timeLockContractId, rollbackExecuteParams);
     }
 }
 
