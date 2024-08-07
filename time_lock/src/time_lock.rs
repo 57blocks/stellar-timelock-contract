@@ -11,7 +11,7 @@ use crate::role_base::RoleLabel;
 use owner::owner;
 
 const DONE_TIMESTAMP: u64 = 1;
-const MAX_ACCOUNTS_NUM: u32 = 10;
+pub const MAX_MIN_DELAY: u64 = 30 * 24 * 60 * 60; // 30 days
 
 #[derive(Clone)]
 #[contracttype]
@@ -42,11 +42,11 @@ pub enum TimeLockError {
     InsufficientDelay = 4,
     TimeNotReady = 5,
     PredecessorNotDone = 6,
-    ExceedMaxCount = 7,
     InvalidStatus = 8,
     NotPermitted = 9,
     ExecuteFailed = 10,
     InvalidFuncName = 11,
+    DelayTooLong = 12,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -74,30 +74,21 @@ pub(crate) fn initialize(
     min_delay: u64,
     proposers: &Vec<Address>,
     executors: &Vec<Address>,
-    owner: &Address,
-    self_managed: bool,
+    owner:  &Option<Address>,
 ) {
     if owner::has_owner(e) {
         panic_with_error!(e, TimeLockError::AlreadyInitialized);
     }
 
-    if min_delay == 0 {
-        panic_with_error!(e, TimeLockError::InvalidParams);
-    }
-
-    if proposers.len() == 0 || executors.len() == 0 {
-        panic_with_error!(e, TimeLockError::InvalidParams);
-    }
-
-    if proposers.len() > MAX_ACCOUNTS_NUM || executors.len() > MAX_ACCOUNTS_NUM {
-        panic_with_error!(e, TimeLockError::ExceedMaxCount);
+    if min_delay > MAX_MIN_DELAY {
+        panic_with_error!(e, TimeLockError::DelayTooLong);
     }
 
     update_min_delay(e, min_delay);
 
-    _set_self_managed(e, self_managed);
-
-    owner::set_owner(e, owner);
+    if let Some(owner) = owner {
+        owner::set_owner(e, owner);
+    }
 
     for proposer in proposers.iter() {
         role_base::grant_role(e, &proposer, &RoleLabel::Proposer);
@@ -212,21 +203,6 @@ pub(crate) fn get_schedule_lock_time(e: &Env, operation_id: &BytesN<32>) -> u64 
     } else {
         0_u64
     }
-}
-
-pub(crate) fn is_self_managed(e: &Env) -> bool {
-    e.storage()
-        .instance()
-        .get(&DataKey::SelfManaged)
-        .unwrap_or(false)
-}
-
-fn _set_self_managed(e: &Env, self_managed: bool) {
-    e.storage()
-        .instance()
-        .set(&DataKey::SelfManaged, &self_managed);
-    e.events()
-        .publish((Symbol::new(e, "SelfManaged"),), self_managed);
 }
 
 fn _get_operation_state(e: &Env, operation_id: &BytesN<32>) -> OperationState {

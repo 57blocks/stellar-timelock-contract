@@ -9,7 +9,7 @@ pub struct Context {
     pub time_lock: TimeLockControllerClient<'static>,
     pub proposer: Address,
     pub executor: Address,
-    pub owner: Address,
+    pub owner: Option<Address>,
 }
 
 pub fn hash_call_data(

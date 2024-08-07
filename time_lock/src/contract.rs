@@ -10,9 +10,9 @@
  */
 use crate::role_base;
 use crate::role_base::RoleLabel;
-use owner::owner;
 use crate::time_lock;
 use crate::time_lock::{DataKey, TimeLockError};
+use owner::owner;
 
 use soroban_sdk::{
     contract, contractimpl, panic_with_error, Address, BytesN, Env, Symbol, Val, Vec,
@@ -29,26 +29,17 @@ impl TimeLockController {
      * - `min_delay`: initial minimum delay in seconds for operations
      * - `proposers`: accounts to be granted proposer and canceller roles
      * - `executors`: accounts to be granted executor role
-     * - `owner`: account to be granted owner role
-     * - `self_managed`: if true, the owner can run management tasks directly; if false, these tasks
-     *  will have to go through the timelock process.
+     * - `owner`: account to be granted owner role, the owner can run management tasks directly,
+     *  if None the contract will only be self managed.
      */
     pub fn initialize(
         e: Env,
         min_delay: u64,
         proposers: Vec<Address>,
         executors: Vec<Address>,
-        owner: Address,
-        self_managed: bool,
+        owner: Option<Address>,
     ) {
-        time_lock::initialize(
-            &e,
-            min_delay,
-            &proposers,
-            &executors,
-            &owner,
-            self_managed,
-        )
+        time_lock::initialize(&e, min_delay, &proposers, &executors, &owner)
     }
 
     /*
@@ -72,10 +63,10 @@ impl TimeLockController {
         delay: u64,
     ) -> BytesN<32> {
         if target == e.current_contract_address() {
-            owner::only_owner(&e);
-        } else {
-            Self::_check_role(&e, &proposer, &RoleLabel::Proposer);
+            Self::_check_fn_name(&e, &fn_name);
         }
+
+        Self::_check_role(&e, &proposer, &RoleLabel::Proposer);
 
         time_lock::schedule(&e, &target, &fn_name, &data, &salt, &predecessor, delay)
     }
@@ -101,20 +92,12 @@ impl TimeLockController {
     ) {
         let mut is_native = false;
         if target == e.current_contract_address() {
-            owner::only_owner(&e);
             is_native = true;
-        } else {
-            Self::_check_role(&e, &executor, &RoleLabel::Executor);
-        }
-        time_lock::execute(
-            &e,
-            &target,
-            &fn_name,
-            &data,
-            &salt,
-            &predecessor,
-            is_native,
-        );
+        } 
+
+        Self::_check_role(&e, &executor, &RoleLabel::Executor);
+        
+        time_lock::execute(&e, &target, &fn_name, &data, &salt, &predecessor, is_native);
     }
 
     /*
@@ -142,9 +125,10 @@ impl TimeLockController {
      * first schedule an operation where the timelock is the target. then execute the operation.
      */
     pub fn update_min_delay(e: Env, delay: u64) {
-        if !time_lock::is_self_managed(&e) {
-            panic_with_error!(e, TimeLockError::NotPermitted);
+        if delay > time_lock::MAX_MIN_DELAY {
+            panic_with_error!(e, TimeLockError::DelayTooLong);
         }
+
         owner::only_owner(&e);
         time_lock::update_min_delay(&e, delay);
     }
@@ -159,9 +143,6 @@ impl TimeLockController {
      * first schedule an operation where the timelock is the target. then execute the operation.
      */
     pub fn grant_role(e: Env, account: Address, role: RoleLabel) -> bool {
-        if !time_lock::is_self_managed(&e) {
-            panic_with_error!(e, TimeLockError::NotPermitted);
-        }
         owner::only_owner(&e);
         role_base::grant_role(&e, &account, &role)
     }
@@ -176,9 +157,6 @@ impl TimeLockController {
      * first schedule an operation where the timelock is the target. then execute the operation.
      */
     pub fn revoke_role(e: Env, account: Address, role: RoleLabel) -> bool {
-        if !time_lock::is_self_managed(&e) {
-            panic_with_error!(e, TimeLockError::NotPermitted);
-        }
         owner::only_owner(&e);
         role_base::revoke_role(&e, &account, &role)
     }
@@ -193,9 +171,6 @@ impl TimeLockController {
      * first schedule an operation where the timelock is the target. then execute the operation.
      */
     pub fn update_owner(e: Env, owner: Address) {
-        if !time_lock::is_self_managed(&e) {
-            panic_with_error!(e, TimeLockError::NotPermitted);
-        }
         owner::only_owner(&e);
         owner::set_owner(&e, &owner)
     }
@@ -222,16 +197,28 @@ impl TimeLockController {
 
         account.require_auth();
     }
+
+    fn _check_fn_name(e: &Env, fn_name: &Symbol) {
+        let fn_name = fn_name.clone();
+        if fn_name == Symbol::new(e, "update_min_delay") {
+            return;
+        } else if fn_name == Symbol::new(e, "grant_role") {
+            return;
+        } else if fn_name == Symbol::new(e, "revoke_role") {
+            return;
+        } else if fn_name == Symbol::new(e, "update_owner") {
+            return;
+        } else {
+            panic_with_error!(e, TimeLockError::InvalidFuncName);
+        }
+    }
 }
 
 #[cfg(any(test, feature = "testutils"))]
 #[contractimpl]
 impl TimeLockController {
     pub fn get_min_delay(e: &Env) -> u64 {
-        e.storage()
-            .instance()
-            .get(&DataKey::MinDelay)
-            .unwrap_or(0)
+        e.storage().instance().get(&DataKey::MinDelay).unwrap_or(0)
     }
 
     pub fn is_owner(e: &Env, account: Address) -> bool {

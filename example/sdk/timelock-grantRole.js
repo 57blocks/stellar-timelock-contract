@@ -15,9 +15,9 @@ const {
 
 async function scheduleAndExecuteGrantRole(roleAccount, role) {
   let timeLockContractId = process.env.timelock_contract_id;
-  let timeLockOwnerLabel = users.timelockOwner;
-  let timeLockOwnerSecret = process.env[`${timeLockOwnerLabel}_secret`];
-  let proposer = process.env[`${timeLockOwnerLabel}_pubkey`];
+  let proposerLabel = users.proposer;
+  let proposerSecret = process.env[`${proposerLabel}_secret`];
+  let proposer = process.env[`${proposerLabel}_pubkey`];
   let target = process.env.timelock_contract_id;
   let fnName = "grant_role";
   let data = [nativeToScVal(roleAccount, { type: "address" }), nativeToScVal(role, { type: "u32" })];
@@ -39,7 +39,7 @@ async function scheduleAndExecuteGrantRole(roleAccount, role) {
     nativeToScVal(delay, { type: "u64" }),
   ];
 
-  const keyPair = Keypair.fromSecret(timeLockOwnerSecret);
+  const keyPair = Keypair.fromSecret(proposerSecret);
   const {result} = await scheduleOperation(
     keyPair,
     timeLockContractId,
@@ -47,10 +47,16 @@ async function scheduleAndExecuteGrantRole(roleAccount, role) {
   );
   if (result) {
     await sleep(20000);
-    const executeParams = scheduleParams.slice(0, scheduleParams.length - 1);
+    let executor = process.env[`${users.executor}_pubkey`];
+    let executorSecret = process.env[`${users.executor}_secret`];
+    let executorKeyPair = Keypair.fromSecret(executorSecret);
+    const executeParams = scheduleParams.slice(1, scheduleParams.length - 1);
+    executeParams.unshift(
+      nativeToScVal(Address.fromString(executor), { type: "address" })
+    );
     let hasRole = await invokeContract(keyPair, timeLockContractId, "has_role", data);
     console.log(`before execute grant role: ${hasRole}`);
-    await executeOperation(keyPair, timeLockContractId, executeParams);
+    await executeOperation(executorKeyPair, timeLockContractId, executeParams);
     hasRole = await invokeContract(keyPair, timeLockContractId, "has_role", data);
     console.log(`after execute grant role: ${hasRole}`);
   }
