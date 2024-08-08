@@ -18,7 +18,7 @@ pub const MAX_MIN_DELAY: u64 = 30 * 24 * 60 * 60; // 30 days
 pub enum DataKey {
     Scheduler(BytesN<32>),
     MinDelay,
-    SelfManaged,
+    Initialized,
 }
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
@@ -76,9 +76,7 @@ pub(crate) fn initialize(
     executors: &Vec<Address>,
     owner:  &Option<Address>,
 ) {
-    if owner::has_owner(e) {
-        panic_with_error!(e, TimeLockError::AlreadyInitialized);
-    }
+    _initialize(e);
 
     if min_delay > MAX_MIN_DELAY {
         panic_with_error!(e, TimeLockError::DelayTooLong);
@@ -88,7 +86,7 @@ pub(crate) fn initialize(
 
     if let Some(owner) = owner {
         owner::set_owner(e, owner);
-    }
+    } 
 
     for proposer in proposers.iter() {
         role_base::grant_role(e, &proposer, &RoleLabel::Proposer);
@@ -350,5 +348,13 @@ fn _update_owner(e: &Env, data: &Vec<Val>) {
         }
     } else {
         panic_with_error!(e, TimeLockError::InvalidParams);
+    }
+}
+
+fn _initialize(e: &Env) {
+    if !e.storage().instance().has(&DataKey::Initialized) {
+        e.storage().instance().set(&DataKey::Initialized, &true);
+    } else {
+        panic_with_error!(e, TimeLockError::AlreadyInitialized);
     }
 }
