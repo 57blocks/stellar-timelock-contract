@@ -172,6 +172,29 @@ mod initialize {
     }
 
     #[test]
+    #[should_panic = "Error(Contract, #2)"]
+    fn twice_should_panic_without_admin() {
+        let env = Env::default();
+        let contract_id = env.register_contract(None, TimeLockController);
+        let client = TimeLockControllerClient::new(&env, &contract_id);
+
+        let proposer = Address::generate(&env);
+        let executor = Address::generate(&env);
+        client.initialize(
+            &MIN_DELAY,
+            &vec![&env, proposer.clone()],
+            &vec![&env, executor.clone()],
+            &None,
+        );
+        client.initialize(
+            &MIN_DELAY,
+            &vec![&env, proposer.clone()],
+            &vec![&env, executor.clone()],
+            &None,
+        );
+    }
+
+    #[test]
     fn params_invalid_should_panic() {
         let env = Env::default();
         let contract_id = env.register_contract(None, TimeLockController);
