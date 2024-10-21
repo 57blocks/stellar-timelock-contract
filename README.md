@@ -86,3 +86,7 @@ you can run `cargo llvm-cov --open` get the coverage report.
 ## Schedule Operation TTL
 
 The scheduled operation is saved in persistent storage. We recommend keeping the operation's waiting time shorter than the default minimum persistence lifetime. Minimum TTL is a network parameter. Refer to the [resource reference](https://developers.stellar.org/docs/reference/resource-limits-fees) to find the current values. If the operation is archived and hasn't been executed yet, it should first be restored before execution.
+
+## Audits Report
+
+The contracts have already audited by [Veridise](https://veridise.com/). [Audit Report](https://veridise.notion.site/fdcf96f994774687859a10df6dfd733c?v=03f497d09a0a40649cf5cdf04623e16f)
