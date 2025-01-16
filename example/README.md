@@ -60,7 +60,7 @@ In the token contract, there are two functions that only called by admin. We ini
 
 ## Run Example Case
 
-1. Execute `npm i` to install packages and it will automatically run the prepare script as well.
+1. Run `npm i` to install packages and it will automatically run the prepare script as well.
 
 2. Make sure the docker is running
 
