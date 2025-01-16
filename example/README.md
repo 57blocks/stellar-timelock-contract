@@ -4,7 +4,7 @@ Example cases to how to use time lock with other contract. We provider two types
 
 ## Example Contract
 
-The example contract [token](https://github.com/stellar/soroban-examples/tree/v20.0.0/token) is from soroban-examples contracts. You can find the source code in the repo. In our case, we use the token's builded wasm file.
+The example contract [token](https://github.com/stellar/soroban-examples/tree/v20.0.0/token) is from soroban-examples contracts. You can find the source code in the repo. In our case, we use the token's built wasm file.
 
 In the token contract, there are two functions that only called by admin. We initialize the token contract by passing TimeLockController's instance as admin. So only the TimeLockController can invoke these two functions.
 
@@ -40,7 +40,7 @@ In the token contract, there are two functions that only called by admin. We ini
 
 - /wasm
 
-  store the token's optimized builded wasm file
+  store the token's optimized built wasm file
 
 - /cli
 
@@ -60,14 +60,12 @@ In the token contract, there are two functions that only called by admin. We ini
 
 ## Run Example Case
 
-1. Make sure the TimeLockController contract in `../time_lock` are builded and optimized
+1. Execute `npm i` to install packages and it will automatically run the prepare script as well.
 
 2. Make sure the docker is running
 
 3. Run `./docker.sh` to start the local node
 
-4. Run `npm run prepare` to deploy and initialize the contracts
+4. Run `npm run run-cli` to run these cases coding by soroban cli
 
-5. Run `npm run run-cli` to run these cases coding by soroban cli
-
-6. Run `npm run run-sdk` to run these cases coding by JS SDK
+5. Run `npm run run-sdk` to run these cases coding by JS SDK
